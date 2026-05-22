@@ -1,0 +1,17 @@
+name: open-cardiac-cest
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - joblib
+  - matplotlib
+  - numpy
+  - pytorch
+  - scipy
+  - sigpy
+  - torchkbnufft
+  - pip:
+    - mrzerocore
+    - pypulseq==1.4.2post1
+    - seqeyes
+    - twixtools
