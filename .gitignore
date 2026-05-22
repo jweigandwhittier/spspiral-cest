@@ -1,0 +1,33 @@
+# Annoying files
+.DS_Store
+*.pyc
+
+# Compiled simulation library and cloned pypulseq
+/open-py-cest-mrf/cest_mrf/sim_lib/build/
+/open-py-cest-mrf/cest_mrf/pypulseq/
+/open-py-cest-mrf/cest_mrf/sim_lib/BMCSimulator.py
+/open-py-cest-mrf/cest_mrf/sim_lib/BMCSimulator_wrap.cpp
+/open-py-cest-mrf/build
+/open-py-cest-mrf/cest_mrf.egg-info
+/open-py-cest-mrf/cest_mrf/sim_lib/BMCSimulator.egg-info
+/open-py-cest-mrf/cest_mrf/sim_lib/_BMCSimulator.cpython-39-darwin.so
+
+# JWW folders (in root)
+/notes/
+/tests/
+
+# All files EXCEPT examples (e.g., in data)
+# Data
+/data/raw/*
+!/data/raw/meas_MID00447_FID90708_wasabi.dat
+/data/recon/*
+!/data/recon/cindy_example_b1.npy
+!/data/recon/MID00447_FID90708_b0.npy
+!/data/recon/MID00447_FID90708_b1.npy
+# Sequences
+/sequences/cest/*
+!/sequences/cest/spiral_cest_gauss_zspec_60_bpm.seq
+!/sequences/cest/spiral_cest_spsp_zspec_60_bpm.seq
+/sequences/wasabi/*
+!/sequences/wasabi/spiral_wasabi_60_bpm.seq
+
