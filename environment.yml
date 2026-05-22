@@ -1,4 +1,4 @@
-name: open-cardiac-cest
+name: spspiral-cest
 channels:
   - conda-forge
 dependencies:
