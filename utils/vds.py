@@ -237,7 +237,7 @@ def variable_density_spiral_trajectory(
     time_points = time_points[downsample_indices]
 
     # Adjust length of arrays to be a multiple of 4
-    valid_length = 4 * (len(angular_positions) // 4) + 1 # Add one
+    valid_length = 4 * (len(angular_positions) // 4) + 1 # Change from adding one to adding two for GE parity
     radial_positions = radial_positions[:valid_length]
     angular_positions = angular_positions[:valid_length]
     time_points = time_points[:valid_length]

@@ -31,7 +31,7 @@ def read_seq_defs(filename):
     return seq, seq.definitions
 
 # --- File locations & loading ---
-twix_filename = '/Users/jonah/Documents/Vandsburger_Lab/open-cardiac-cest/data/raw/Compare_FieldMap_Zspec_2/meas_MID00046_FID44268_pulseq.dat'
+twix_filename = '/Users/jonah/Documents/Vandsburger_Lab/open-cardiac-cest/data/raw/PureTemp_Cr_PCr/meas_MID00231_FID44707_pulseq_wasabi.dat'
 seq_filename = '/Users/jonah/Documents/Vandsburger_Lab/open-cardiac-cest/data/raw/Compare_FieldMap_Zspec_2/spiral_wasabi_60_bpm.seq'
 seq, defs = read_seq_defs(seq_filename)
 ksp_raw = read_image_data(twix_filename)

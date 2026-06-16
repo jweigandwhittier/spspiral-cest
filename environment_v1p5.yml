@@ -1,4 +1,4 @@
-name: open-cardiac-cest
+name: open-cardiac-cest-v1p5
 channels:
   - conda-forge
 dependencies:
@@ -11,8 +11,7 @@ dependencies:
   - sigpy
   - torchkbnufft
   - pip:
-    - mrzerocore
-    - pypulseq==1.4.2post1
+    - pypulseq=1.5.0post1
     - seqeyes
     - twixtools
     - roipoly

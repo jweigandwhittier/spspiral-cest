@@ -5,6 +5,7 @@ Created on Wed Apr 29 16:36:26 2026
 
 @author: jonah
 """
+import os
 import time
 import numpy as np
 import pypulseq as pp
@@ -30,6 +31,7 @@ PLOT_VDS = False
 CEST_PREP = True
 TRIGGER = True
 
+FLAG_GE = False
 FLAG_PLOT = False
 FLAG_PLOT_ECG = False
 FLAG_TEST = False
@@ -43,7 +45,7 @@ def input_hr():
         except:
             print("Error: Please enter a valid integer heart rate.")  
 
-def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, FLAG_SEQEYES):
+def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_GE, FLAG_PLOT, FLAG_TEST, FLAG_SEQEYES):
     # Initialize new sequence
     seq = pp.Sequence(system=sys)
     gamma_hz = sys.gamma * 1e-6
@@ -58,7 +60,6 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
     tissue_t1 = 2.3 # Assumed tissue T1 [s]; used for Ernst angle calculation
     
     # CEST parameters
-    # offsets_ppm = offset # [ppm]
     offsets_ppm = [-75, -4, -3.73, -3.46, -3.2, -2.93, -2.67, -2.4, -2.13, -1.86, -1.6, -1.33, -1.06, -0.8, -0.53, -0.26, 0, 0.26, 0.53, 0.8, 1.06, 1.33, 1.67, 1.86, 2.13, 2.4, 2.66, 2.93, 3.2, 3.46, 3.73, 4]
     trec = [15, 0.5, 1, 2, 3, 4, 5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 5, 4, 3, 2, 1, 0.5]
     b1 = 3.7 # Peak B1 [uT]
@@ -72,14 +73,15 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
     rf_phase = 0
     rf_spoiling_inc = 117 # RF spoiling increment [°]
     
-    # Heart rate calculations
+    # Always pre-compute tp_aligned; it is needed by CEST_PREP regardless of TRIGGER
     raster = sys.grad_raster_time
+    tp_aligned = np.round(tp / raster) * raster
+
+    # Heart rate calculations
     if TRIGGER:
         rr = 60 / hr
         dias_delay = np.round(0.559 * np.sqrt(60/hr) - 0.137, 3) # From simulations
         if CEST_PREP:
-            # Pre-calculate aligned durations 
-            tp_aligned = np.round(tp / raster) * raster
             sat_pulse_dur = tp_aligned + sys.rf_dead_time
             sat_time = (n_pulses * sat_pulse_dur)
             spoil_time = spoil_dur
@@ -90,13 +92,24 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
             trig_delay = dias_delay
         # Make trigger with delay
         trig_delay = np.round(trig_delay / raster) * raster
-        trig = pp.make_trigger(channel='physio1', duration=trig_delay)    
+        if not FLAG_GE:
+            trig = pp.make_trigger(channel='physio1', duration=trig_delay)
         print(f"Using R-R interval of {rr:.2f} s, calculated trigger delay is {trig_delay:.2f} s\n")
-    
+
+    # Set labels for GE scanner — assign sentinel values first so all labels are
+    # always defined regardless of which flags are active
+    if FLAG_GE:
+        current_label = 1
+        prep_label = current_label
+        current_label += 1
+        readout_label = current_label
+        current_label += 1
+        delay_label = current_label
+        current_label += 1
+
     # Spiral parameters
     max_kspace_radius = 0.5 / (resolution)
     sampling_period = sys.grad_raster_time
-    # fov_coefficients = [fov, -fov/3]
     fov_coefficients = [fov, -1/4*fov]
     
     # Write spiral
@@ -113,8 +126,7 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
     
     # Calculate ADC
     adc_dwell = sys.grad_raster_time
-    adc_total_samples = num_grad_samples - 1
-    print('ADC total samples: {adc_total_samples}')
+    adc_total_samples = num_grad_samples - 2 # Subtract two here
     assert adc_total_samples <= 8192, 'ADC samples exceed maximum value of 8192.'
     adc = pp.make_adc(num_samples=adc_total_samples, dwell=adc_dwell, delay=sys.adc_dead_time, system=sys)
     print(f'ADC Samples: {adc_total_samples}\n')
@@ -175,18 +187,6 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
            system=sys,
         )
         
-        # Safely calculate diffs using the actual time nodes (avoiding divide-by-zero on triangles)
-        dt_x = np.diff(gxr_times)
-        dt_y = np.diff(gyr_times)
-        
-        gxr_slew = np.abs(np.divide(np.diff(gxr_amps), dt_x, out=np.zeros_like(dt_x), where=dt_x!=0))
-        gyr_slew = np.abs(np.divide(np.diff(gyr_amps), dt_y, out=np.zeros_like(dt_y), where=dt_y!=0))
-        
-        # Get highest slew and convert to T/m/s
-        max_slew = max(np.max(gxr_slew), np.max(gyr_slew)) / sys.gamma
-        
-        # print(f"Max slew rate of rewinder gradients: {round(max_slew, 2)} T/m/s")
-        
         gx_readout_list.append(gx_readout)
         gy_readout_list.append(gy_readout)
         gx_rewinder_list.append(gx_rewinder)
@@ -202,13 +202,10 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
         gx_rew = gx_rewinder_list[i]
         gy_rew = gy_rewinder_list[i]
         tol = 0
-        # Assert starting point of readouts is 0
         assert abs(gx_read.first) == tol, f"Gx readout {i} starts at {gx_read.first:.6e}, expected 0"
         assert abs(gy_read.first) == tol, f"Gy readout {i} starts at {gy_read.first:.6e}, expected 0"
-        # Assert end of readout matches start of rewinder
         assert abs(gx_read.last - gx_rew.first) == tol, f"Gx readout {i} end ({gx_read.last:.6e}) mismatches rewinder start ({gx_rew.first:.6e})"
         assert abs(gy_read.last - gy_rew.first) == tol, f"Gy readout {i} end ({gy_read.last:.6e}) mismatches rewinder start ({gy_rew.first:.6e})"
-        # Assert end point of rewinders is 0
         assert abs(gx_rew.last) == tol, f"Gx rewinder {i} ends at {gx_rew.last:.6e}, expected 0"
         assert abs(gy_rew.last) == tol, f"Gy rewinder {i} ends at {gy_rew.last:.6e}, expected 0"
     
@@ -275,52 +272,54 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
             ax.set_ylabel("$k_y$ (1/m)")
             ax.axis('equal')
     
+    # --- LOOP OVER OFFSETS ---
     for m, offset in enumerate(offsets_ppm):
-    
+
+        # --- Trigger ---
         if TRIGGER:
-            seq.add_block(trig)
+            if FLAG_GE:
+                trig_event = pp.make_trigger('physio1', duration=20e-6)
+                seq.add_block(trig_event, pp.make_label('TRID', 'SET', prep_label))
+                seq.add_block(pp.make_delay(trig_delay))
+            else:
+                seq.add_block(trig)
         
+        # --- CEST Preparation ---
         if CEST_PREP:
-            # Define saturation block
             offset_hz = offset * freq
             fa_sat = b1 * gamma_hz * tp_aligned * 2 * np.pi
-            sat_pulse = pp.make_block_pulse(fa_sat, duration=tp_aligned, system=sys, freq_offset = offset_hz)
-            # Make spoiler
+            sat_pulse = pp.make_block_pulse(fa_sat, duration=tp_aligned, system=sys, freq_offset=offset_hz)
             gx_spoil_cest, gy_spoil_cest, gz_spoil_cest = [
                 pp.make_trapezoid(channel=c, system=sys, amplitude=spoil_amp, duration=spoil_dur, rise_time=spoil_rise_time)
                 for c in ["x", "y", "z"]]
-            # Make sat loop
+            # When FLAG_GE is active but there is no trigger, label the first sat
+            # pulse so the prep period is always marked
+            label_first_sat = FLAG_GE and not TRIGGER
             for n in range(n_pulses):
-                seq.add_block(sat_pulse) 
+                if label_first_sat and n == 0:
+                    seq.add_block(sat_pulse, pp.make_label('TRID', 'SET', prep_label))
+                else:
+                    seq.add_block(sat_pulse)
             seq.add_block(gx_spoil_cest, gy_spoil_cest, gz_spoil_cest)
-        
-        # Put it together
+
+        # --- Readout ---
         rf_phase = 0
         rf_inc = 0
-        
-        # Calculate the absolute longest duration needed
-        # raw_target_dur = max(max_rewinder_duration, pp.calc_duration(gz_spoil))
-        # Enforce raster alignment
-        # target_rewinder_block_dur = np.round(raw_target_dur / raster) * raster
-        # Quick diagnostic to prove it worked
-        # print(f"Raw duration:     {raw_target_dur:.9f} s")
-        # print(f"Aligned duration: {target_rewinder_block_dur:.9f} s")
-        # assert (target_rewinder_block_dur % raster) < 1e-9 or (raster - (target_rewinder_block_dur % raster)) < 1e-9, \
-        #     f"Target duration {target_rewinder_block_dur} is not aligned to the {raster}s raster!"
             
         for n in range(n_interleaves):
             # Apply phase offsets for spoiling
             rf_exc.phase_offset = rf_phase / 180 * np.pi
             adc.phase_offset = rf_phase / 180 * np.pi
-            # Excitation
-            seq.add_block(rf_exc, gz)
+            # Excitation — label the first interleave so the recon can identify
+            # the start of each readout block; also covers the no-prep/no-trigger
+            # case since this will be the first labeled event for that offset
+            if FLAG_GE and n == 0:
+                seq.add_block(rf_exc, gz, pp.make_label('TRID', 'SET', readout_label))
+            else:
+                seq.add_block(rf_exc, gz)
             # Rephase
             seq.add_block(gz_reph)
             # Spiral readout
-            # Shift ADC for troubleshooting
-            # if n == 0:
-            #     seq.add_block(gx_readout_list[n], gy_readout_list[n])
-            # else:
             seq.add_block(gx_readout_list[n], gy_readout_list[n], adc)
             # Rewind and spoil
             gx_rew = gx_rewinder_list[n]
@@ -331,22 +330,48 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
             extra_delay = max_rewinder_duration - current_grad_dur
             # Add a separate delay block if there's time left
             if extra_delay > 0:
-                # Align to raster (10us) to be safe
                 extra_delay = np.ceil(extra_delay / sys.grad_raster_time) * sys.grad_raster_time
                 seq.add_block(pp.make_delay(extra_delay))
             # Increment RF and ADC phase
             rf_inc = divmod(rf_inc + rf_spoiling_inc, 360.0)[1]
             rf_phase = divmod(rf_phase + rf_inc, 360.0)[1]
-            
-        # Add delay
-        trec_delay = pp.make_delay(trec[m])
-        seq.add_block(trec_delay)
+
+        # --- Recovery delay ---
+        # GE interpreter prefers delays < 1 s; break each trec into sub-second
+        # blocks aligned to the gradient raster.  Values already < 1 s become a
+        # single block.  The first block carries delay_label.
+        if FLAG_GE:
+            recovery_delay_time = trec[m]
+            max_block_dur = np.floor(1.0 / sys.grad_raster_time) * sys.grad_raster_time
+            n_full_blocks = int(np.floor(recovery_delay_time / max_block_dur))
+            remainder = np.round(
+                (recovery_delay_time - n_full_blocks * max_block_dur) / sys.grad_raster_time
+            ) * sys.grad_raster_time
+            for d in range(n_full_blocks):
+                if d == 0:
+                    seq.add_block(pp.make_delay(max_block_dur),
+                                  pp.make_label('TRID', 'SET', delay_label))
+                else:
+                    seq.add_block(pp.make_delay(max_block_dur))
+            if remainder >= sys.grad_raster_time:
+                # Remainder block: label it if there were no full blocks (i.e. trec < 1 s)
+                if n_full_blocks == 0:
+                    seq.add_block(pp.make_delay(remainder),
+                                  pp.make_label('TRID', 'SET', delay_label))
+                else:
+                    seq.add_block(pp.make_delay(remainder))
+        else:
+            seq.add_block(pp.make_delay(trec[m]))
+
+        # Advance prep_label so each offset is uniquely identified by the recon
+        if FLAG_GE:
+            current_label += 1
+            prep_label = current_label
     
-    # Define seq filename
-    # seq_id = f"spiral_wasabi_{hr}_bpm_{offset}_ppm.seq"
+    # --- Write sequence ---
     seq_id = f"spiral_wasabi_{hr}_bpm.seq"
+    seq_filename = f'sequences/wasabi/{seq_id}'
     
-    # Write definitions for recon   
     seq.set_definition('Name', f'Spiral_WASABI_{hr}_bpm')
     seq.set_definition('B0', sys.B0)
     seq.set_definition('FOV', [fov, fov, slice_thickness])
@@ -360,7 +385,6 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
     seq.set_definition('HR', hr)
     seq.set_definition('MaxAdcSegmentLength', adc_total_samples)
     
-    # Check timing and write sequence
     ok, error_report = seq.check_timing()
     if ok:
         print('\nTiming check passed successfully!')
@@ -369,16 +393,34 @@ def write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, 
     else:
         print('\nTiming check failed! Error listing follows\n')
         [print(e) for e in error_report]
-    seq.write(f'sequences/wasabi/{seq_id}')
-    seq.plot(grad_disp='mT/m')
+
+    seq.write(seq_filename)
+
+    if FLAG_PLOT:
+        seq.plot(grad_disp='mT/m')
     
-    # Load in Seqeyes
     if FLAG_SEQEYES:
-        seqeyes.seqeyes(seq_id)
-        
+        seqeyes.seqeyes(seq_filename)
+
+    if FLAG_GE:
+        import matlab.engine
+        print("Starting MATLAB engine...")
+        eng = matlab.engine.start_matlab("-nojvm -nodisplay")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        print(f"Adding {script_dir} to MATLAB path")
+        eng.addpath(script_dir, nargout=0)
+        sys_dict = {
+            'maxGrad': float(sys.max_grad),
+            'maxSlew': float(sys.max_slew),
+            'gamma': float(sys.gamma)
+        }
+        eng.convert_toppe_ucsf(str(seq_filename), sys_dict, float(n_interleaves), nargout=0)
+
+    return seq_filename
+
 def main(sys):
     hr = input_hr()
-    write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_PLOT, FLAG_TEST, FLAG_SEQEYES)
+    write_sequence(sys, hr, PLOT_VDS, CEST_PREP, TRIGGER, FLAG_GE, FLAG_PLOT, FLAG_TEST, FLAG_SEQEYES)
 
 if __name__ == "__main__":
     tic = time.time()

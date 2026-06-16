@@ -9,7 +9,7 @@ import roipoly
 import numpy as np
 import pypulseq as pp
 import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter, binary_erosion
+from . import read_dicom
 
 # Helper functions
 def align_grad_raster(time, sys):
@@ -39,10 +39,6 @@ def dotrap_pypulseq(area_m_inv, sys, channel='z'):
     return trap
 
 def find_optimal_spsp_pair(sys, target_duration_s=250e-6, min_flat_time_s=50e-6):
-    """
-    Maximizes the SPSP gradient area by locking the flat-top duration 
-    and finding the maximum possible gradient amplitude that fits the time limit.
-    """
     safe_max_grad = sys.max_grad * 0.99
     safe_max_slew = sys.max_slew * 0.99
     safe_sys = pp.opts.Opts(
@@ -71,14 +67,18 @@ def find_optimal_spsp_pair(sys, target_duration_s=250e-6, min_flat_time_s=50e-6)
     return final_trap1, final_trap2
 
 def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
-    # Load sequence and defs
-    seq = pp.Sequence()
-    seq.read(seq_filename)
-        
-    # Get parameters
-    defs = seq.definitions
-    fov = defs['FOV'] # [m]
-    nx = defs['Nx']
+    if seq_filename != 'dicom':
+        # Load sequence and defs
+        seq = pp.Sequence()
+        seq.read(seq_filename)
+        # Get parameters
+        defs = seq.definitions
+        fov = defs['FOV'] # [m]
+        nx = defs['Nx']
+
+    else:
+        b1_map, nx, fov = read_dicom.dicom_b1_siemens(b1_map)
+    
     dx = fov[0] / nx # Pixel spacing [m]
     dy = fov[1] / nx # Pixel spacing (y) [m]
     gambar = sys.gamma/1e4
@@ -94,10 +94,14 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
     y_masked = y[mask]
     b1_masked = b1_map[mask]
     
-    base_trap, rewinder = find_optimal_spsp_pair(sys, target_duration_s=250.0e-6, min_flat_time_s=50e-6)
+    # Fix requested durations to gradient raster
+    target_duration_s = align_grad_raster(250e-6, sys)
+    min_flat_time_s = align_grad_raster(50e-6, sys)
+    
+    base_trap, rewinder = find_optimal_spsp_pair(sys, target_duration_s, min_flat_time_s)
 
-    # dt = sys.rf_raster_time # This might work?
-    dt = 1e-5 # Fix equal to CA's code 
+    dt = sys.rf_raster_time # This might work?
+    # dt = 1e-5 # Fix equal to CA's code 
     nt = int(np.round(base_trap.flat_time / dt))
     flat_duration = base_trap.flat_time
     g_amp_Hz = base_trap.amplitude 
@@ -197,31 +201,28 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
     raster = sys.grad_raster_time
     prewinder_grad_delay = np.round(prewinder_grad_delay / raster) * raster
     prewinder_rf_delay = np.round(prewinder_rf_delay / raster) * raster
-
+    
     # Concatenate an arbitrary number of waveforms AND/OR time delays
     def make_combined_times_amps(*items):
         times = [0.0]
         amps = [0.0]
         current_time = 0.0
+        raster = sys.grad_raster_time  # capture from outer scope
         
         for item in items:
-            # Check if the item is a numeric delay (in seconds)
             if isinstance(item, (int, float, np.number)):
                 if item > 0:
                     current_time += item
+                    current_time = np.round(current_time / raster) * raster
                     times.append(current_time)
-                    amps.append(0.0) # Delay has 0 amplitude
-                    
-            # Otherwise, assume it's a PyPulseq waveform
+                    amps.append(0.0)
             else:
-                segments = [
-                    (item.rise_time, item.amplitude),
-                    (item.flat_time, item.amplitude),
-                    (item.fall_time, 0.0)
-                ]
-                for dt_seg, target_amp in segments:
+                for dt_seg, target_amp in [(item.rise_time, item.amplitude),
+                                            (item.flat_time, item.amplitude),
+                                            (item.fall_time, 0.0)]:
                     if dt_seg > 0:
                         current_time += dt_seg
+                        current_time = np.round(current_time / raster) * raster
                         times.append(current_time)
                         amps.append(target_amp)
                         
@@ -254,6 +255,9 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
     final_rewinder_x = pp.make_trapezoid(channel='x', area=-gx_lobe1.area / 2, system=sys)
     final_rewinder_y = pp.make_trapezoid(channel='y', area=-gy_lobe1.area / 2, system=sys)
     final_rewind_dur = max(pp.calc_duration(final_rewinder_x), pp.calc_duration(final_rewinder_y))
+    final_rewind_dur = align_grad_raster(final_rewind_dur, sys)
+    final_rewinder_x = pp.make_trapezoid(channel='x', area=-gx_lobe1.area / 2, duration=final_rewind_dur, system=sys)
+    final_rewinder_y = pp.make_trapezoid(channel='y', area=-gy_lobe1.area / 2, duration=final_rewind_dur, system=sys)
 
     
     # --- Generate the Gaussian Envelope ---
@@ -269,8 +273,11 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
     max_magnitude = np.max(np.abs(final_rf_weights))
     norm_subpulse = final_rf_weights / max_magnitude
 
-    intrapulse_delay = pp.calc_duration(gx_rewind) + gx_lobe1.rise_time + gx_lobe1.fall_time
-    intrapulse_delay = int(np.ceil(intrapulse_delay / sys.grad_raster_time) * sys.grad_raster_time / dt)
+    # intrapulse_delay = pp.calc_duration(gx_rewind) + gx_lobe1.rise_time + gx_lobe1.fall_time
+    # intrapulse_delay = int(np.ceil(intrapulse_delay / sys.grad_raster_time) * sys.grad_raster_time / dt)
+    intrapulse_delay_s = pp.calc_duration(gx_rewind) + gx_lobe1.rise_time + gx_lobe1.fall_time
+    intrapulse_delay_s = align_grad_raster(intrapulse_delay_s, sys)
+    intrapulse_delay = int(np.round(intrapulse_delay_s / dt))
 
     pulse_shape = []
     grad_x_list = []
@@ -280,7 +287,8 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
         # Add initial prewinder before the first subpulse
         if n == 0:
             # RF delay is an array of zeros 
-            pulse_shape.append(np.zeros(int(prewinder_rf_delay / dt)))
+            # pulse_shape.append(np.zeros(int(prewinder_rf_delay / dt)))
+            pulse_shape.append(np.zeros(int(np.round(prewinder_rf_delay / dt))))
             
             # Gradient delay is just the scalar time in seconds
             grad_x_list.append(prewinder_grad_delay)
@@ -301,8 +309,9 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
             grad_x_list.append(gx_rewind)
             grad_y_list.append(gy_rewind)
         elif n == len(weights) - 1:
-            # Ensure the duration is converted to an integer array length using dt
-            pulse_shape.append(np.zeros(int(final_rewind_dur / dt))) 
+
+            # pulse_shape.append(np.zeros(int(final_rewind_dur / dt))) 
+            pulse_shape.append(np.zeros(int(np.round(final_rewind_dur / dt))))
             grad_x_list.append(final_rewinder_x)
             grad_y_list.append(final_rewinder_y)
 
@@ -316,7 +325,7 @@ def calc_spsp(b1_map, seq_filename, tp, sys, myocardium):
     # Create the final, single extended trapezoids for the entire pulse train
     full_gx = pp.make_extended_trapezoid(channel='x', amplitudes=gcx_amp, times=gcx_times, system=sys)
     full_gy = pp.make_extended_trapezoid(channel='y', amplitudes=gcy_amp, times=gcy_times, system=sys)
-
+        
     # Package outputs
     spsp_objects = {
         'gx_lobe0': gx_lobe0,

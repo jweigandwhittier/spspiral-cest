@@ -12,15 +12,14 @@ import numpy as np
 import pypulseq as pp
 import matplotlib.pyplot as plt
 import seqeyes
-from utils import vds, sim_cest_rf, prep_toppe
+from utils import vds, sim_cest_rf, prep_pge2
 from types import SimpleNamespace
-from math import gcd
 
 # Prisma hardware limits
 sys = pp.opts.Opts(
     max_grad = 30, # Try to fix crashing (could probably boost this back up for slice select)
     grad_unit = 'mT/m',
-    max_slew = 90, # Back off a bit here, too (needs to be around 100 mT/(m*ms) to avoid PNS violation)
+    max_slew = 90, # 
     slew_unit = 'mT/m/ms',
     rf_ringdown_time = 60e-6, # JWW change from 20 to 60 for parity with GE
     rf_dead_time = 100e-6,
@@ -32,14 +31,15 @@ sys = pp.opts.Opts(
 sys_ge = pp.opts.Opts(
     max_grad = 30, # Try to fix crashing (could probably boost this back up for slice select)
     grad_unit = 'mT/m',
-    max_slew = 100, # Back off a bit here, too (needs to be around 100 mT/(m*ms) to avoid PNS violation)
+    max_slew = 90, # Had to change for GE PNS check
     slew_unit = 'mT/m/ms',
     rf_ringdown_time = 60e-6, 
-    rf_dead_time = 90e-6,
+    rf_dead_time = 100e-6,
     adc_dead_time = 20e-6, 
     grad_raster_time = 4e-6, # This is important
     adc_raster_time = 2e-6, # This is also important
     rf_raster_time = 2e-6, # Finally, need this
+    block_duration_raster = 4e-6, # This might fix everything?
     B0 = 3.00
     )
 
@@ -48,15 +48,15 @@ flags = {
 'PLOT_VDS': False, # Plot spiral trajectories
 'TRIGGER': True, # Cardiac triggering
 'SPSP': False, # Calculate and write sequences with spatial-spectral saturation
-'ZSPEC': False, # Full Z-spectral acquisition with delays
+'ZSPEC': True, # Full Z-spectral acquisition with delays
 
-'FLAG_PLOT': True, # Plot sequence 
+'FLAG_PLOT': False, # Plot sequence 
 'FLAG_PLOT_ECG': False, # Plot with ECG
 'FLAG_TEST_REPORT': False, # Print full test report
 'FLAG_SEQEYES': True, # Open sequences in Seqeyes
 'FLAG_MYOCARDIUM': False, # For ROI drawing
 
-'FLAG_GE': False # For writing the sequence on the GE scanner
+'FLAG_GE': True # For writing the sequence on the GE scanner
 }
 
 # Sequence definitions (for all sequences)
@@ -69,8 +69,8 @@ defs_dict = {
 
 # CEST parameters
 'b1': 1.20, # Peak B1 [uT]
-'dc': 0.63, # Line Cindy's
-'n_pulses': 23, # Like Cindy's 
+'dc': 0.63,
+'n_pulses': 23, 
 'tp': 36e-3, # [s]
 'spoil_rise_time': 1e-3, # [s]
 'spoil_dur': 6.5e-3, # [s]
@@ -87,18 +87,13 @@ defs_dict = {
 defs = SimpleNamespace(**defs_dict)
 
 # If writing sequences with spsp pulses, provide B1 map and WASABI seq filename
-b1_map = np.load('data/recon/sam_b1_map.npy') # Or paste DICOM file path directly
-wasabi_seq_filename = 'dicom' # Put 'dicom_siemens' or 'dicom_ge' here if the map is from a DICOM
+b1_map = np.load('data/recon/cindy_example_b1.npy') # Or paste DICOM file path directly
+wasabi_seq_filename = 'sequences/example/cindy_b1.seq' # Put 'dicom_siemens' or 'dicom_ge' here if the map is from a DICOM
 
 # Helper functions
-def lcm_time(a_s, b_s, precision=1e-9):
-    a_int = int(round(a_s / precision))
-    b_int = int(round(b_s / precision))
-    return (a_int * b_int // gcd(a_int, b_int)) * precision
-
 def input_hr():
     while True:
-        hr = input("Enter subject's current heart rate: ")
+        hr = input(">Enter subject's current heart rate: ")
         try:
             return int(hr)
         except:
@@ -106,7 +101,7 @@ def input_hr():
             
 def input_cv(cv_str):
     while True:
-        cv = input(f"Enter {cv_str}: ")
+        cv = input(f">Enter {cv_str}: ")
         try:
             return float(cv)
         except:
@@ -116,6 +111,12 @@ def convert_ge(seq_filename, cvs):
     import matlab.engine
     print("Starting MATLAB engine...")
     eng = matlab.engine.start_matlab("-java")
+    # Force light mode
+    eng.eval("set(groot, 'DefaultFigureColor', [1, 1, 1]);", nargout=0)
+    eng.eval("set(groot, 'DefaultAxesColor', [1, 1, 1]);", nargout=0)
+    eng.eval("set(groot, 'DefaultAxesXColor', [0, 0, 0]);", nargout=0)
+    eng.eval("set(groot, 'DefaultAxesYColor', [0, 0, 0]);", nargout=0)
+    eng.eval("set(groot, 'DefaultTextColor', [0, 0, 0]);", nargout=0)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     print(f"Adding {script_dir} to MATLAB path")
     eng.addpath(script_dir, nargout=0)
@@ -124,8 +125,13 @@ def convert_ge(seq_filename, cvs):
         'maxSlew': float(sys.max_slew),
         'gamma': float(sys.gamma)
     }
-    # Pass the simple dictionary instead of the complex 'sys' object.
-    eng.convert_pge2(str(seq_filename), sys_dict, cvs, True, nargout=0)
+    # Pass the simple dictionary instead of the complex 'sys' object
+    pislquant = 0
+    eng.convert_pge2(str(seq_filename), sys_dict, cvs, pislquant, True, nargout=0)
+    # Python handles the input safely in your terminal
+    input("Press Enter in this Python console to close the MATLAB plot and continue...")
+    # Force the engine to close the open figure
+    eng.eval("close(gcf);", nargout=0)
 
 def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
     # Initialize new sequence
@@ -133,41 +139,36 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
     gamma_hz = defs.gamma_hz
     freq = defs.freq
     resolution = defs.fov / defs.nx
-    # Heart rate calculations
+    
+    # Define GE block delay
+    # Per JFN, there is an (empirically determined) 116us delay added per segment on GE, account for this
+    ge_delay = 116e-6 
+    
+    # Pre-calculate aligned durations 
     raster = sys.grad_raster_time
+    tp_aligned = np.round(defs.tp / raster) * raster
+    if flags['FLAG_GE']:
+        defs.td -= ge_delay
+    td_aligned = np.round((defs.tp / defs.dc - defs.tp) / raster) * raster
+    sat_pulse_dur = tp_aligned + sys.rf_dead_time
+    sat_time = (defs.n_pulses * sat_pulse_dur) + ((defs.n_pulses - 1) * td_aligned)
+    spoil_time = defs.spoil_dur
+    prep_time = sat_time + spoil_time
+    
+    # Heart rate calculations
     if flags['TRIGGER']:
         rr = 60 / hr
-        dias_delay = np.round(0.559 * np.sqrt(60/hr) - 0.137, 3) # From simulations
-        # Pre-calculate aligned durations 
-        tp_aligned = np.round(defs.tp / raster) * raster
-        td_aligned = np.round((defs.tp / defs.dc - defs.tp) / raster) * raster
-        sat_pulse_dur = tp_aligned + sys.rf_dead_time
-        sat_time = (defs.n_pulses * sat_pulse_dur) + ((defs.n_pulses - 1) * td_aligned)
-        spoil_time = defs.spoil_dur
-        prep_time = sat_time + spoil_time
+        dias_delay = np.round(0.559 * np.sqrt(rr) - 0.137, 3) # From simulations
         n_beats = max(0, int(np.ceil((prep_time - dias_delay) / rr)))
         trig_delay = (n_beats * rr) + dias_delay - prep_time
         # Make trigger with delay
         trig_delay = np.round(trig_delay / raster) * raster
         if not flags['FLAG_GE']:
-            trig = pp.make_trigger(channel='physio1', duration=trig_delay) 
+            trig_delay -= ge_delay
+            trig = pp.make_trigger(channel='physio1', duration=trig_delay)
         else: 
-            trig = pp.make_trigger(channel='physio1', duration=20e-6) # Duration is ignored by GE (?)
+            trig = pp.make_trigger(channel='physio1', duration=20e-6)
         print(f"Using R-R interval of {rr:.2f} s, calculated trigger delay is {trig_delay:.2f} s\n")
-        
-    # Set labels for GE scanner — assign sentinel values first so all labels are
-    # always defined regardless of which flags are active
-    if flags['FLAG_GE']:
-        current_label = 1
-        prep_label = current_label
-        current_label += 1
-        readout_label = current_label
-        current_label += 1
-        if flags['ZSPEC']:
-            delay_label = current_label
-            current_label += 1
-        else:
-            delay_label = -1  # Not used
         
     # Spiral parameters
     max_kspace_radius = 0.5 / (resolution)
@@ -187,7 +188,7 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
     num_grad_samples = np.shape(g)[0]
     
     # Calculate ADC
-    adc_dwell = 10e-6 # Hardcode this
+    adc_dwell = 10e-6 # Hardcode this to preserve readout bandwidth (BWPP --> SNR)
     active_grad_time = num_grad_samples * sys.grad_raster_time
     sampling_time = active_grad_time - 2 * sys.adc_dead_time
     max_samples = int(np.floor(sampling_time / adc_dwell))
@@ -255,7 +256,7 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         gy_readout_list.append(gy_readout)
         gx_rewinder_list.append(gx_rewinder)
         gy_rewinder_list.append(gy_rewinder)
-    
+        
     # Check waveform start/end values
     for i in range(defs.n_interleaves):
         gx_read = gx_readout_list[i]
@@ -284,7 +285,8 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         time_bw_product = 8.0,
         system = sys,
         return_gz = True,
-        delay = sys.rf_dead_time)
+        delay = sys.rf_dead_time,
+        use = 'excitation')
     
     # Write spoiler
     n_cycles = 4
@@ -296,7 +298,7 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         system=sys
     )
     
-    # Update max rewinder duration
+    # Update max rewinder duration 
     max_rewinder_duration = max(
     max(pp.calc_duration(gx_rewinder_list[i]) for i in range(defs.n_interleaves)),
     max(pp.calc_duration(gy_rewinder_list[i]) for i in range(defs.n_interleaves)),
@@ -316,6 +318,7 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
     # Find Ernst angle
     tr = exc_duration + arm_duration
     ernst_angle = np.arccos(np.exp(-tr/defs.tissue_t1))
+    ernst_angle = 15 * (np.pi / 180) # Just try 15deg
     
     rf_exc, gz, gz_reph = pp.make_sinc_pulse(
         flip_angle = ernst_angle, 
@@ -325,11 +328,13 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         time_bw_product = 8.0,
         system = sys,
         return_gz = True,
-        delay = sys.rf_dead_time)
+        delay = sys.rf_dead_time,
+        use = 'excitation')
 
     print(f"\nFinal TR: {tr*1000:.2f} ms | Ernst Angle: {ernst_angle * 180 / np.pi:.2f}°")
     print(f"Final readout duration: {tr*defs.n_interleaves*1000:.2f} ms")
     
+    # Plot the spirals
     if flags['PLOT_VDS']:
         fig, ax = plt.subplots()
         for i in range(defs.n_interleaves):
@@ -338,15 +343,32 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
             ax.set_xlabel("$k_x$ (1/m)")
             ax.set_ylabel("$k_y$ (1/m)")
             ax.axis('equal')
+            
+    # Grab SPSP waveforms if needed
+    if flags['SPSP']:
+        spsp_grad_x = spsp_objects['full_gx']
+        spsp_grad_y = spsp_objects['full_gy']
+        spsp_rf_shape = spsp_objects['full_rf']
+        
+    # Define sat pulses outside the loop
     
-    # --- Loop over offsets --- #
+
+    # Define fixed labels once, outside the offset loop
+    if flags['FLAG_GE']:
+        trigger_label      = 1
+        prep_label         = 2  # sat pulse + spoiler + delay (pulses 0 to N-2)
+        last_prep_label    = 3  # sat pulse + spoiler only (pulse N-1)
+        readout_base_label = 4  # one per interleave (4 through 4+N-1)
+        delay_label        = 4 + defs.n_interleaves  # ZSPEC recovery delay
+        
+    # Loop over offsets
     for offset_idx, offset_ppm in enumerate(offsets):
+        
         if flags['TRIGGER']:
             if not flags['FLAG_GE']:
                 seq.add_block(trig)
             else:
-                trig = pp.make_trigger('physio1', duration=20e-6)
-                seq.add_block(trig, pp.make_label('TRID', 'SET', prep_label))
+                seq.add_block(trig, pp.make_label('TRID', 'SET', trigger_label))
                 seq.add_block(pp.make_delay(trig_delay))
         
         # Define saturation offset frequency
@@ -359,7 +381,8 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
                                         apodization=0.5, 
                                         delay=100e-6, 
                                         freq_offset=offsets_hz,
-                                        system=sys)
+                                        system=sys,
+                                        use='preparation')
         
         # Scale sat pulse and find total flip angle
         target_peak_hz = defs.b1 * gamma_hz
@@ -368,52 +391,40 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         dt = sys.rf_raster_time
         total_flip_angle = np.abs(np.sum(sat_pulse.signal)) * dt * 2 * np.pi
         
-        # accum_phase = 0
-        
         for n in range(defs.n_pulses):
-            label_this_block = (
-                flags['FLAG_GE'] and not flags['TRIGGER'] and n == 0
-            )
+            is_last = (n == defs.n_pulses - 1)
+            label = last_prep_label if is_last else prep_label
+
             if flags['SPSP']:
-                spsp_grad_x = spsp_objects['full_gx']
-                spsp_grad_y = spsp_objects['full_gy']
-                spsp_rf_shape = spsp_objects['full_rf']
-                
                 spsp_pulse = pp.make_arbitrary_rf(spsp_rf_shape, 
                                                   flip_angle=total_flip_angle, 
                                                   dwell=sys.rf_raster_time, 
                                                   delay=sys.rf_dead_time,
                                                   freq_offset=offsets_hz,
-                                                  system=sys)
-                
-                # spsp_pulse.phase_offset = accum_phase % (2 * np.pi)
-                if label_this_block:
+                                                  system=sys,
+                                                  use='preparation')
+                if flags['FLAG_GE']:
                     seq.add_block(spsp_pulse, spsp_grad_x, spsp_grad_y,
-                                  pp.make_label('TRID', 'SET', prep_label))
+                                  pp.make_label('TRID', 'SET', label))
                 else:
                     seq.add_block(spsp_pulse, spsp_grad_x, spsp_grad_y)
-                
-                # Advance phase
-                # accum_phase = (accum_phase + offsets_hz * 2 * np.pi * pp.calc_duration(spsp_pulse)) % (2 * np.pi)
-            
+
             else:
-                # sat_pulse.phase_offset = accum_phase % (2 * np.pi)
-                if label_this_block:
-                    seq.add_block(sat_pulse, pp.make_label('TRID', 'SET', prep_label))
+                if flags['FLAG_GE']:
+                    seq.add_block(sat_pulse, pp.make_label('TRID', 'SET', label))
                 else:
                     seq.add_block(sat_pulse)
-                # Advance phase
-                # accum_phase = (accum_phase + offsets_hz * 2 * np.pi * pp.calc_duration(sat_pulse)) % (2 * np.pi)
 
-            # Make and add spoiler
+            # Spoiler — no label, TRID carries over from sat pulse
             gx_spoil_cest, gy_spoil_cest, gz_spoil_cest = [
-                pp.make_trapezoid(channel=c, system=sys, amplitude=defs.spoil_amp, duration=defs.spoil_dur, rise_time=defs.spoil_rise_time)
+                pp.make_trapezoid(channel=c, system=sys, amplitude=defs.spoil_amp,
+                                  duration=defs.spoil_dur, rise_time=defs.spoil_rise_time)
                 for c in ["x", "y", "z"]
             ]
             seq.add_block(gx_spoil_cest, gy_spoil_cest, gz_spoil_cest)
-            
-            # Inter-pulse delay
-            if n < defs.n_pulses - 1:
+
+            # Inter-pulse delay — no label, TRID carries over, only for non-last pulses
+            if not is_last:
                 seq.add_block(pp.make_delay(td_aligned - defs.spoil_dur))
                 
         # Put it together (Readout)
@@ -421,12 +432,15 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         rf_inc = 0
             
         for n in range(defs.n_interleaves):
+            current_readout_label = readout_base_label + n
+            
             # Apply phase offsets for spoiling
             rf_exc.phase_offset = rf_phase / 180 * np.pi
             adc.phase_offset = rf_phase / 180 * np.pi
+            
             # Excitation
-            if flags['FLAG_GE'] and n == 0:
-                seq.add_block(rf_exc, gz, pp.make_label('TRID', 'SET', readout_label))
+            if flags['FLAG_GE']:
+                seq.add_block(rf_exc, gz, pp.make_label('TRID', 'SET', current_readout_label))
             else:
                 seq.add_block(rf_exc, gz)
             # Rephase
@@ -437,16 +451,19 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
             gx_rew = gx_rewinder_list[n]
             gy_rew = gy_rewinder_list[n]
             seq.add_block(gx_rew, gy_rew, gz_spoil)
+            
             # Calculate how much 'dead time' is left in this TR
             current_grad_dur = max(pp.calc_duration(gx_rew), pp.calc_duration(gy_rew), pp.calc_duration(gz_spoil))
             extra_delay = max_rewinder_duration - current_grad_dur
+            if flags['FLAG_GE']:
+                extra_delay -= ge_delay
+            
             # Add a separate delay block if there's time left
             if extra_delay > 0:
-                # Align to raster (10us) to be safe
-                # extra_delay = np.ceil(extra_delay / sys.grad_raster_time) * sys.grad_raster_time
-                # Align to common raster
+                # Align to raster
                 extra_delay = np.ceil(extra_delay / raster) * raster
                 seq.add_block(pp.make_delay(extra_delay))
+            
             # Increment RF and ADC phase
             rf_inc = divmod(rf_inc + defs.rf_spoiling_inc, 360.0)[1]
             rf_phase = divmod(rf_phase + rf_inc, 360.0)[1]
@@ -454,38 +471,20 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
         # Add magnetization recovery delay if ZSPEC is enabled and not the last offset
         if flags['ZSPEC'] and offset_idx < len(offsets) - 1:
             recovery_delay_time = 5 * defs.tissue_t1
+            aligned_recovery_delay = np.round(recovery_delay_time / sys.grad_raster_time) * sys.grad_raster_time
             if flags['FLAG_GE']:
-                max_block_dur = np.floor(1.0 / sys.grad_raster_time) * sys.grad_raster_time
-                n_full_blocks = int(np.floor(recovery_delay_time / max_block_dur))
-                remainder = np.round(
-                    (recovery_delay_time - n_full_blocks * max_block_dur) / sys.grad_raster_time
-                ) * sys.grad_raster_time
-                for d in range(n_full_blocks):
-                    if d == 0:
-                        # Label only the first block so the recon can identify
-                        # the start of the recovery period
-                        seq.add_block(pp.make_delay(max_block_dur),
-                                      pp.make_label('TRID', 'SET', delay_label))
-                    else:
-                        seq.add_block(pp.make_delay(max_block_dur))
-                if remainder >= sys.grad_raster_time:
-                    seq.add_block(pp.make_delay(remainder))
+                seq.add_block(pp.make_delay(aligned_recovery_delay), pp.make_label('TRID', 'SET', delay_label))
             else:
-                # Ensure delay is completely aligned with PyPulseq's raster boundaries
-                aligned_recovery_delay = np.round(recovery_delay_time / sys.grad_raster_time) * sys.grad_raster_time
                 seq.add_block(pp.make_delay(aligned_recovery_delay))
-            
-        # Increment prep label
-        if flags['FLAG_GE']:
-            current_label += 1
-            prep_label = current_label
+
     # Define sequence naming prefix based on SPSP flag
     pulse_type = "SPSP" if flags['SPSP'] else "Gauss"
     if flags['ZSPEC']:
         seq_name = f'Spiral_CEST_{pulse_type}_ZSPEC_{hr}_bpm'
     else:
-        seq_name = f'Spiral_CEST_{pulse_type}_{hr}_bpm_{offsets[0]}_ppm'
-        # seq_name = f'Spiral_CEST_60_bpm_{offsets[0]}_ppm' # For CB scanner
+        # Format the offset: replace decimal point with 'p' (e.g., 75.0 -> 75p0)
+        offset_str = str(offsets[0]).replace('.', 'p')
+        seq_name = f'Spiral_CEST_{pulse_type}_{hr}_bpm_{offset_str}_ppm'
     if flags['FLAG_GE']:
         seq_name += '_ge'
         
@@ -493,12 +492,11 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
 
     # Write definitions for recon   
     seq.set_definition('Name', seq_name)
-    # Use attributes from the 'defs' SimpleNamespace
     seq.set_definition('FOV', [defs.fov, defs.fov, defs.slice_thickness])
     seq.set_definition('Slice_Thickness', defs.slice_thickness)
     seq.set_definition('Nx', defs.nx)
     seq.set_definition('N_Interleaves', defs.n_interleaves)
-    seq.set_definition('Offsets_ppm', [float(o) for o in offsets]) # Store as list to prevent errors
+    seq.set_definition('Offsets_ppm', [float(o) for o in offsets])
     seq.set_definition('B1peak', defs.b1)
     seq.set_definition('N_Pulses', defs.n_pulses)
     seq.set_definition('DC', defs.dc)
@@ -529,10 +527,10 @@ def write_sequence(sys, hr, offsets, flags, defs, spsp_objects):
     
 def main(sys):
     hr = input_hr()
-    toppe_entry = 600 
-    
+    pge_entry = 60
+
     # Destination configurations
-    scanner_sequence_dir = Path('/usr/g/research/jweigandwhittier')
+    scanner_sequence_dir = Path('/srv/nfs/psd/usr/psd/pulseq/v7/sequences')
     scanner_entry_dir = Path('/srv/nfs/psd/usr/psd/pulseq/v7/')
     
     # Track files to process at the end
@@ -566,34 +564,24 @@ def main(sys):
         
         if flags['FLAG_GE']:
             convert_ge(seq_filename, cvs)
-            # Add to batch collection
-            # sequences_to_batch.append({"seq_path": Path(seq_filename), "toppe_n": toppe_entry})
+            sequences_to_batch.append({"seq_path": Path(seq_filename), "pge_n": pge_entry})
+            pge_entry += 1
             
     else:
-        offsets = [75.00, 2.00, -2.00, 3.50, -3.50]
+        offsets = [75.00, 0.00, 2.00]
         for offset in offsets:
             print(f'\n--- Writing sequence: {offset} ppm ---\n')
             seq_filename = write_sequence(sys, hr, [offset], flags, defs, spsp_objects)
             
             if flags['FLAG_GE']:
                 convert_ge(seq_filename, cvs)
-            #     # Add to batch collection and step up entry count
-            #     sequences_to_batch.append({"seq_path": Path(seq_filename), "toppe_n": toppe_entry})
-            #     toppe_entry += 1
+                sequences_to_batch.append({"seq_path": Path(seq_filename), "pge_n": pge_entry})
+                pge_entry += 1
 
     # --- SINGLE BATCH HANDOFF ---
-    # if flags['FLAG_GE'] and sequences_to_batch:
-    #     # Define a single master deploy script path
-    #     master_script_path = Path('sequences/deploy_all_sequences_cest.sh')
-        
-    #     # Run the modified batch preparation
-    #     prep_toppe.prep_toppe_batch(sequences_to_batch, scanner_sequence_dir, scanner_entry_dir, master_script_path)
-        
-        # If you want it to run immediately automatically, uncomment below:
-        # import subprocess
-        # print("\n>>> Executing Master Batch Deployment across all files...")
-        # subprocess.run(["bash", str(master_script_path)], check=True)
-                
+    if flags['FLAG_GE'] and sequences_to_batch:
+        master_script_path = Path('sequences/deploy_all_sequences_cest.sh')
+        prep_pge2.prep_pge2_batch(sequences_to_batch, scanner_sequence_dir, scanner_entry_dir, master_script_path)
         
 if __name__ == "__main__":
     tic = time.time()

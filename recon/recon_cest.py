@@ -218,15 +218,15 @@ def plot_image_grid(stack, offsets, title, cmap='gray', vmin=None, vmax=None,
 #   'single'      – single offset image (reconstruction only; skips B0 interpolation & MTRasym)
 #   'separate'    – positive offsets, negative offsets, and reference are separate acquisitions
 #   'zspectrum'   – full Z-spectrum (positive + negative offsets) in one acquisition;
-ACQUISITION_MODE = 'zspectrum'
+ACQUISITION_MODE = 'single'
 
 # --- File locations ---
-twix_filename_cest = '/Users/jonah/Documents/Vandsburger_Lab/open-cardiac-cest/data/raw/Compare_FieldMap_Zspec_2/meas_MID00048_FID44270_pulseq_spsp_zspec.dat'
-seq_filename_cest  = '/Users/jonah/Documents/Vandsburger_Lab/open-cardiac-cest/data/raw/Compare_FieldMap_Zspec_2/spiral_cest_spsp_zspec_60_bpm.seq'
+twix_filename_cest = '/Users/jonah/Documents/MRI_Data/BIC/Sam_Jun82026/raw/meas_MID00083_FID45671_pulseq_spiral_cest_3_5_ppm_spsp.dat'
+seq_filename_cest  = '/Users/jonah/Documents/MRI_Data/BIC/Sam_Jun82026/sequences/spiral_cest_gauss_40_bpm_75.0_ppm.seq'
 
 # Only used in 'separate' mode
-# twix_filename_asym = '../data/raw/Volunteer_May112026/meas_MID00274_FID43996_pulseq.dat'
-# seq_filename_asym  = '../sequences/cest/spiral_cest_gauss_70_bpm_-2.0_ppm.seq'
+twix_filename_asym = '/Volumes/JWW-BIC/PureTemp_Cr_PCr/meas_MID00235_FID44711_pulseq_spsp_zspec.dat'
+seq_filename_asym  = '/Volumes/JWW-BIC/PureTemp_Cr_PCr/spiral_cest_gauss_zspec_60_bpm.seq'
 
 # Reference: set SEPARATE_REF=False when embedded in the CEST acquisition
 twix_filename_ref = None
@@ -234,7 +234,7 @@ seq_filename_ref  = None
 SEPARATE_REF      = False
 
 # WASABI maps (.npy, in ppm)
-b0_map_path = '../data/recon/MID00046_FID44268_b0.npy'
+b0_map_path = '../data/recon/MID00231_FID44707_b0.npy'
 
 # Extract ID for saving/logging
 match        = re.search(r'(MID\d+_FID\d+)', twix_filename_cest)
@@ -445,3 +445,42 @@ else:
     )
 
     plt.show()
+    
+#%%
+from roipoly import MultiRoi
+fig, ax = plt.subplots()
+ax.imshow(ref_image, cmap='gray')
+ax.axis('off')
+
+multiroi_named = MultiRoi(roi_names=['Cr', 'PCr', 'Cr+PCr'])
+
+#%%
+# ── 8. Plot average Z-spectra per ROI ─────────────────────────────────────────
+print("\nPlotting average Z-spectra per ROI...")
+
+# norm_sorted and offsets_sorted are already sorted by offset (from step 7)
+# Shape of norm_sorted: [n_offsets, nx, ny]
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+z_spectra_gauss = {}
+
+for roi_name, roi in multiroi_named.rois.items():
+    mask = roi.get_mask(ref_image)          # boolean mask, shape [nx, ny]
+    # Average over all masked voxels for each offset
+    z_mean = np.array([
+        norm_sorted[i][mask].mean() for i in range(len(offsets_sorted))
+    ])
+    ax.plot(offsets_sorted, z_mean, marker='o', markersize=3, label=roi_name)
+    z_spectra_gauss[roi_name] = z_mean
+
+ax.set_xlabel('Offset (ppm)')
+ax.set_ylabel('Z = S/S$_0$')
+ax.set_title(f'Average Z-Spectra by ROI — {extracted_id}')
+ax.invert_xaxis()          # convention: downfield (positive) on the left
+ax.set_ylim(0, 1.05)
+ax.axvline(0, color='gray', linewidth=0.8, linestyle='--')
+ax.legend()
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
