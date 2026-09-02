@@ -35,6 +35,18 @@ If you are using an *older* interpreter sequence (v1.4.2) on a Siemens scanner, 
 
 The Orchestra SDK is required to reconstruct raw data from GE scanners. If your site has an active research agreement with GE, the easiest way to obtain this is through a GE Healthcare enterprise GitHub account, which grants access to [a private GitHub repo](https://github.com/GEHC-External/MR-Orchestra-SDK-Python) where the SDK can be downloaded.
 
+### MATLAB Engine
+
+pge2 requires an active MATLAB installation. Here, we call the required MATLAB functions in Python using the [MATLAB Engine API](https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html). This should be installed *separately* using pip depending on the version of MATLAB you have installed. 
+
+Check the indexed versions of MATLAB Engine using:
+
+`pip index versions matlabengine`
+
+And install the one matching your MATLAB version number (e.g., for MATLAB R2025a):
+
+`pip install matlabengine==25.1.2`
+
 ### Pulseg and pge2
 
 A Pulseq .seq file must be converted to the pge2 format before it can be run on GE hardware. This is a multi-step process requiring source code for both [pge2](https://github.com/HarmonizedMRI/pge2/tree/main) and [Pulseg](https://github.com/HarmonizedMRI/pulseg). Both of these repositories should cloned in *this repository's parent directory*. 
