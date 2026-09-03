@@ -1,0 +1,19 @@
+# Annoying files
+.DS_Store
+*.pyc
+
+# Site-specific scripts
+/utils/prep_pge2.py
+
+# Data
+/data/raw/*
+!/data/raw/example
+/data/recon/*
+!/data/recon/example
+
+# Sequences
+/sequences/siemens/*
+/sequences/ge/*
+!/sequences/siemens/example
+!/sequences/ge/example
+

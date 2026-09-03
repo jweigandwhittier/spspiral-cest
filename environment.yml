@@ -1,0 +1,21 @@
+name: spspiral-cest
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - joblib
+  - matplotlib
+  - numpy<2
+  - scipy
+  - scikit-learn
+  - sigpy
+  - torchkbnufft
+  - pydicom
+  - pip
+  - pip:
+    - pypulseq @ git+https://github.com/mcencini/pypulseq.git@c45b696c170837b3c178563cb53b2f367bae6727
+    - seqeyes
+    - twixtools
+    - roipoly
+    - finufft
+

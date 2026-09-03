@@ -1,0 +1,20 @@
+name: spspiral-cest-legacy
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - joblib
+  - matplotlib
+  - numpy<2
+  - scipy
+  - scikit-learn
+  - sigpy
+  - torchkbnufft
+  - pydicom
+  - pip
+  - pip:
+    - pypulseq==1.4.2post1
+    - seqeyes
+    - twixtools
+    - roipoly
+    - finufft

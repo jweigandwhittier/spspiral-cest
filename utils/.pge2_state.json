@@ -1,0 +1,267 @@
+{
+  "berkeley": {
+    "next_n": 75,
+    "entries": {
+      "10": {
+        "scan": "continuous_spiral_zspec_gauss_75p0_ppm_ge",
+        "description": "zspec 75.0 ppm"
+      },
+      "11": {
+        "scan": "continuous_spiral_zspec_gauss_-10p0_ppm_ge",
+        "description": "zspec -10.0 ppm"
+      },
+      "12": {
+        "scan": "continuous_spiral_zspec_gauss_-9p0_ppm_ge",
+        "description": "zspec -9.0 ppm"
+      },
+      "13": {
+        "scan": "continuous_spiral_zspec_gauss_-8p0_ppm_ge",
+        "description": "zspec -8.0 ppm"
+      },
+      "14": {
+        "scan": "continuous_spiral_zspec_gauss_-7p0_ppm_ge",
+        "description": "zspec -7.0 ppm"
+      },
+      "15": {
+        "scan": "continuous_spiral_zspec_gauss_-6p0_ppm_ge",
+        "description": "zspec -6.0 ppm"
+      },
+      "16": {
+        "scan": "continuous_spiral_zspec_gauss_-5p0_ppm_ge",
+        "description": "zspec -5.0 ppm"
+      },
+      "17": {
+        "scan": "continuous_spiral_zspec_gauss_-4p8_ppm_ge",
+        "description": "zspec -4.8 ppm"
+      },
+      "18": {
+        "scan": "continuous_spiral_zspec_gauss_-4p6_ppm_ge",
+        "description": "zspec -4.6 ppm"
+      },
+      "19": {
+        "scan": "continuous_spiral_zspec_gauss_-4p4_ppm_ge",
+        "description": "zspec -4.4 ppm"
+      },
+      "20": {
+        "scan": "continuous_spiral_zspec_gauss_-4p2_ppm_ge",
+        "description": "zspec -4.2 ppm"
+      },
+      "21": {
+        "scan": "continuous_spiral_zspec_gauss_-4p0_ppm_ge",
+        "description": "zspec -4.0 ppm"
+      },
+      "22": {
+        "scan": "continuous_spiral_zspec_gauss_-3p8_ppm_ge",
+        "description": "zspec -3.8 ppm"
+      },
+      "23": {
+        "scan": "continuous_spiral_zspec_gauss_-3p6_ppm_ge",
+        "description": "zspec -3.6 ppm"
+      },
+      "24": {
+        "scan": "continuous_spiral_zspec_gauss_-3p4_ppm_ge",
+        "description": "zspec -3.4 ppm"
+      },
+      "25": {
+        "scan": "continuous_spiral_zspec_gauss_-3p2_ppm_ge",
+        "description": "zspec -3.2 ppm"
+      },
+      "26": {
+        "scan": "continuous_spiral_zspec_gauss_-3p0_ppm_ge",
+        "description": "zspec -3.0 ppm"
+      },
+      "27": {
+        "scan": "continuous_spiral_zspec_gauss_-2p8_ppm_ge",
+        "description": "zspec -2.8 ppm"
+      },
+      "28": {
+        "scan": "continuous_spiral_zspec_gauss_-2p6_ppm_ge",
+        "description": "zspec -2.6 ppm"
+      },
+      "29": {
+        "scan": "continuous_spiral_zspec_gauss_-2p4_ppm_ge",
+        "description": "zspec -2.4 ppm"
+      },
+      "30": {
+        "scan": "continuous_spiral_zspec_gauss_-2p2_ppm_ge",
+        "description": "zspec -2.2 ppm"
+      },
+      "31": {
+        "scan": "continuous_spiral_zspec_gauss_-2p0_ppm_ge",
+        "description": "zspec -2.0 ppm"
+      },
+      "32": {
+        "scan": "continuous_spiral_zspec_gauss_-1p8_ppm_ge",
+        "description": "zspec -1.8 ppm"
+      },
+      "33": {
+        "scan": "continuous_spiral_zspec_gauss_-1p6_ppm_ge",
+        "description": "zspec -1.6 ppm"
+      },
+      "34": {
+        "scan": "continuous_spiral_zspec_gauss_-1p4_ppm_ge",
+        "description": "zspec -1.4 ppm"
+      },
+      "35": {
+        "scan": "continuous_spiral_zspec_gauss_-1p2_ppm_ge",
+        "description": "zspec -1.2 ppm"
+      },
+      "36": {
+        "scan": "continuous_spiral_zspec_gauss_-1p0_ppm_ge",
+        "description": "zspec -1.0 ppm"
+      },
+      "37": {
+        "scan": "continuous_spiral_zspec_gauss_-0p8_ppm_ge",
+        "description": "zspec -0.8 ppm"
+      },
+      "38": {
+        "scan": "continuous_spiral_zspec_gauss_-0p6_ppm_ge",
+        "description": "zspec -0.6 ppm"
+      },
+      "39": {
+        "scan": "continuous_spiral_zspec_gauss_-0p4_ppm_ge",
+        "description": "zspec -0.4 ppm"
+      },
+      "40": {
+        "scan": "continuous_spiral_zspec_gauss_-0p2_ppm_ge",
+        "description": "zspec -0.2 ppm"
+      },
+      "41": {
+        "scan": "continuous_spiral_zspec_gauss_0p0_ppm_ge",
+        "description": "zspec 0.0 ppm"
+      },
+      "42": {
+        "scan": "continuous_spiral_zspec_gauss_0p2_ppm_ge",
+        "description": "zspec 0.2 ppm"
+      },
+      "43": {
+        "scan": "continuous_spiral_zspec_gauss_0p4_ppm_ge",
+        "description": "zspec 0.4 ppm"
+      },
+      "44": {
+        "scan": "continuous_spiral_zspec_gauss_0p6_ppm_ge",
+        "description": "zspec 0.6 ppm"
+      },
+      "45": {
+        "scan": "continuous_spiral_zspec_gauss_0p8_ppm_ge",
+        "description": "zspec 0.8 ppm"
+      },
+      "46": {
+        "scan": "continuous_spiral_zspec_gauss_1p0_ppm_ge",
+        "description": "zspec 1.0 ppm"
+      },
+      "47": {
+        "scan": "continuous_spiral_zspec_gauss_1p2_ppm_ge",
+        "description": "zspec 1.2 ppm"
+      },
+      "48": {
+        "scan": "continuous_spiral_zspec_gauss_1p4_ppm_ge",
+        "description": "zspec 1.4 ppm"
+      },
+      "49": {
+        "scan": "continuous_spiral_zspec_gauss_1p6_ppm_ge",
+        "description": "zspec 1.6 ppm"
+      },
+      "50": {
+        "scan": "continuous_spiral_zspec_gauss_1p8_ppm_ge",
+        "description": "zspec 1.8 ppm"
+      },
+      "51": {
+        "scan": "continuous_spiral_zspec_gauss_2p0_ppm_ge",
+        "description": "zspec 2.0 ppm"
+      },
+      "52": {
+        "scan": "continuous_spiral_zspec_gauss_2p2_ppm_ge",
+        "description": "zspec 2.2 ppm"
+      },
+      "53": {
+        "scan": "continuous_spiral_zspec_gauss_2p4_ppm_ge",
+        "description": "zspec 2.4 ppm"
+      },
+      "54": {
+        "scan": "continuous_spiral_zspec_gauss_2p6_ppm_ge",
+        "description": "zspec 2.6 ppm"
+      },
+      "55": {
+        "scan": "continuous_spiral_zspec_gauss_2p8_ppm_ge",
+        "description": "zspec 2.8 ppm"
+      },
+      "56": {
+        "scan": "continuous_spiral_zspec_gauss_3p0_ppm_ge",
+        "description": "zspec 3.0 ppm"
+      },
+      "57": {
+        "scan": "continuous_spiral_zspec_gauss_3p2_ppm_ge",
+        "description": "zspec 3.2 ppm"
+      },
+      "58": {
+        "scan": "continuous_spiral_zspec_gauss_3p4_ppm_ge",
+        "description": "zspec 3.4 ppm"
+      },
+      "59": {
+        "scan": "continuous_spiral_zspec_gauss_3p6_ppm_ge",
+        "description": "zspec 3.6 ppm"
+      },
+      "60": {
+        "scan": "continuous_spiral_zspec_gauss_3p8_ppm_ge",
+        "description": "zspec 3.8 ppm"
+      },
+      "61": {
+        "scan": "continuous_spiral_zspec_gauss_4p0_ppm_ge",
+        "description": "zspec 4.0 ppm"
+      },
+      "62": {
+        "scan": "continuous_spiral_zspec_gauss_4p2_ppm_ge",
+        "description": "zspec 4.2 ppm"
+      },
+      "63": {
+        "scan": "continuous_spiral_zspec_gauss_4p4_ppm_ge",
+        "description": "zspec 4.4 ppm"
+      },
+      "64": {
+        "scan": "continuous_spiral_zspec_gauss_4p6_ppm_ge",
+        "description": "zspec 4.6 ppm"
+      },
+      "65": {
+        "scan": "continuous_spiral_zspec_gauss_4p8_ppm_ge",
+        "description": "zspec 4.8 ppm"
+      },
+      "66": {
+        "scan": "continuous_spiral_zspec_gauss_5p0_ppm_ge",
+        "description": "zspec 5.0 ppm"
+      },
+      "67": {
+        "scan": "continuous_spiral_zspec_gauss_6p0_ppm_ge",
+        "description": "zspec 6.0 ppm"
+      },
+      "68": {
+        "scan": "continuous_spiral_zspec_gauss_7p0_ppm_ge",
+        "description": "zspec 7.0 ppm"
+      },
+      "69": {
+        "scan": "continuous_spiral_zspec_gauss_8p0_ppm_ge",
+        "description": "zspec 8.0 ppm"
+      },
+      "70": {
+        "scan": "continuous_spiral_zspec_gauss_9p0_ppm_ge",
+        "description": "zspec 9.0 ppm"
+      },
+      "71": {
+        "scan": "continuous_spiral_zspec_gauss_10p0_ppm_ge",
+        "description": "zspec 10.0 ppm"
+      },
+      "72": {
+        "scan": "continuous_spiral_gauss_75p0_ppm_ge",
+        "description": "75.0 ppm"
+      },
+      "73": {
+        "scan": "continuous_spiral_gauss_2p0_ppm_ge",
+        "description": "2.0 ppm"
+      },
+      "74": {
+        "scan": "continuous_spiral_gauss_-2p0_ppm_ge",
+        "description": "-2.0 ppm"
+      }
+    }
+  }
+}
