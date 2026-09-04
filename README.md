@@ -29,11 +29,17 @@ To use these sequences on your scanner (with and without spatial-spectral satura
 
 ## Environments
 
-Two environments are included in this repository ([environment.yml](environment.yml) and [environment_legacy.yml](environment_legacy.yml)).
+### Primary
+
+Two primary environments are included in this repository ([environment.yml](environment.yml) and [environment_legacy.yml](environment_legacy.yml)).
 
 For general use, libraries should be installed using the default [environment.yml](environment.yml) file. This file installs a PyPulseq v1.5.1 fork by [@mcencini](https://github.com/mcencini) which includes an implementation of the rotation extension (see [pulseq/pypulseq#184](https://github.com/pulseq/pypulseq/discussions/184) and [pulseq/pulseq#117](https://github.com/pulseq/pulseq/discussions/117)). This extension is *required* to use this sequence on GE scanners due to memory constraints, and is the preferred way to implement sequences with gradient rotation for Pulseq versions ≥v1.5.0. For more information regarding sequence design constraints on GE hardware, please reference the [pge2 design rules](https://github.com/HarmonizedMRI/SequenceExamples-GE/blob/main/pge2/docs/pge2-sequence-design-rules.md).
 
 If you are using an *older* interpreter sequence (v1.4.2) on a Siemens scanner, this rotation extension will not work correctly. In this case, install libraries using [environment_legacy.yml](environment_legacy.yml)). Here, gradient rotations are calculated manually in the loop and sequences are written using [PyPulseq v1.4.2post1](https://github.com/pulseq/pypulseq/releases#release-v1.4.2.post1).
+
+### Simulation
+
+An additional environment is included for sequence simulation (with [BMCTool](https://github.com/schuenke/BMCTool)).
 
 ## GE Specifics
 
