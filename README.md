@@ -17,7 +17,7 @@ To use these sequences on your scanner (with and without spatial-spectral satura
 2. Set up a [Conda](https://www.anaconda.com/docs/getting-started/miniconda/main) environment using the included `environment.yml` file
    * Navigate to your `spspiral-cest` directory
    * Run `conda env create -f environment.yml`
-     * Two environment files are included (`environment.yml` and `environment_legacy.yml`) — see the [**Environments**](#environments) section below for details
+     * Two environment files are included ([environment.yml](environment.yml) and [environment_legacy.yml](environment_legacy.yml)) — see the [**Environments**](#environments) section below for details
    * Activate the environment with `conda activate spspiral-cest`
 3. Write a .seq file using [continuous_spiral.py](continuous_spiral.py)
    * The script contains various flags, which should be set based on the user's preferences. CEST prep and readout parameters can also be changed, but the sequence may no longer work as designed.
@@ -29,15 +29,15 @@ To use these sequences on your scanner (with and without spatial-spectral satura
 
 ## Environments
 
-Two environments are included in this repository (`environment.yml` and `environment_legacy.yml`).
+Two environments are included in this repository ([environment.yml](environment.yml) and [environment_legacy.yml](environment_legacy.yml)).
 
-For general use, libraries should be installed using the default `environment.yml` file. This file installs a PyPulseq v1.5.1 fork by [@mcencini](https://github.com/mcencini) which includes an implementation of the rotation extension (see [pulseq/pypulseq#184](https://github.com/pulseq/pypulseq/discussions/184) and [pulseq/pulseq#117](https://github.com/pulseq/pulseq/discussions/117)). This extension is *required* to use this sequence on GE scanners due to memory constraints, and is the preferred way to implement sequences with gradient rotation for Pulseq versions ≥v1.5.0. For more information regarding sequence design constraints on GE hardware, please reference the [pge2 design rules](https://github.com/HarmonizedMRI/SequenceExamples-GE/blob/main/pge2/docs/pge2-sequence-design-rules.md).
+For general use, libraries should be installed using the default [environment.yml](environment.yml) file. This file installs a PyPulseq v1.5.1 fork by [@mcencini](https://github.com/mcencini) which includes an implementation of the rotation extension (see [pulseq/pypulseq#184](https://github.com/pulseq/pypulseq/discussions/184) and [pulseq/pulseq#117](https://github.com/pulseq/pulseq/discussions/117)). This extension is *required* to use this sequence on GE scanners due to memory constraints, and is the preferred way to implement sequences with gradient rotation for Pulseq versions ≥v1.5.0. For more information regarding sequence design constraints on GE hardware, please reference the [pge2 design rules](https://github.com/HarmonizedMRI/SequenceExamples-GE/blob/main/pge2/docs/pge2-sequence-design-rules.md).
 
-If you are using an *older* interpreter sequence (v1.4.2) on a Siemens scanner, this rotation extension will not work correctly. In this case, install libraries using `environment_legacy.yml`. Here, gradient rotations are calculated manually in the loop and sequences are written using [PyPulseq v1.4.2post1](https://github.com/pulseq/pypulseq/releases#release-v1.4.2.post1).
+If you are using an *older* interpreter sequence (v1.4.2) on a Siemens scanner, this rotation extension will not work correctly. In this case, install libraries using [environment_legacy.yml](environment_legacy.yml)). Here, gradient rotations are calculated manually in the loop and sequences are written using [PyPulseq v1.4.2post1](https://github.com/pulseq/pypulseq/releases#release-v1.4.2.post1).
 
 ## GE Specifics
 
-[@jfnielsen](https://github.com/jfnielsen) and the rest of the GE Pulseq team have done an incredible job designing and implementing the GE Pulseq interpreter sequence. Due to hardware constraints inherent to the GE platform, a few extra steps are required to get this sequence running correctly on GE scanners.
+[@jfnielsen](https://github.com/jfnielsen) and the rest of the GE Pulseq team have done an incredible job designing and implementing the GE Pulseq interpreter sequence. Due to hardware constraints inherent to the GE platform, a few extra steps are required to get this sequence running correctly on GE scanners. 
 
 ### Orchestra SDK
 
