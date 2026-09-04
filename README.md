@@ -2,6 +2,8 @@
 
 *Code for cardiac CEST (with spatial-spectral saturation) using VD spiral readouts in Pulseq*
 
+### CEST-weighted CINE
+
 ![Reference](gifs/MID00042_FID139550_gauss_ref_cardiac_cine.gif) ![2 ppm](gifs/MID00043_FID139551_gauss_2ppm_cardiac_cine.gif) ![-2 ppm](gifs/MID00044_FID139552_gauss__2ppm_cardiac_cine.gif)
 
 ## Instructions
