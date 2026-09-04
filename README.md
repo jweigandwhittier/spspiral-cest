@@ -6,6 +6,9 @@
 
 ![Reference](gifs/MID00042_FID139550_gauss_ref_cardiac_cine.gif) ![2 ppm](gifs/MID00043_FID139551_gauss_2ppm_cardiac_cine.gif) ![-2 ppm](gifs/MID00044_FID139552_gauss__2ppm_cardiac_cine.gif)
 
+### Simulated CEST contrasts
+<img src="simulate/continuous_spiral_zspec_5pool_sim.png" alt="Simulated" style="width:30%; height:auto;">
+
 ## Instructions
 
 To use these sequences on your scanner (with and without spatial-spectral saturation pulses), follow the instructions below.
