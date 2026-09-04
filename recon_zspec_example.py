@@ -41,7 +41,7 @@ if scanner == 'ge':
         if len(h5_files) != 1:
             raise ValueError(f"Expected exactly one .h5 file in {folder_path}, found {len(h5_files)}")
         h5_path = os.path.join(folder_path, h5_files[0])
-        _, ksp, _ = extract_raw.extract_kspace(h5_path)
+        _, ksp, _, vendor = extract_raw.extract_kspace(h5_path)
         ksp_list.append(ksp)
 
     ksp_all = np.array(ksp_list)  # [offsets, samples, interleaves, coils]

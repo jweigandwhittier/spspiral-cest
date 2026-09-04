@@ -1,0 +1,13 @@
+name: sim-cest
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - matplotlib
+  - pip
+  - pip:
+    - pypulseq @ git+https://github.com/mcencini/pypulseq.git@c45b696c170837b3c178563cb53b2f367bae6727
+    - bmctool
+
+
+

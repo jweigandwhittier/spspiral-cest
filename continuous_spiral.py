@@ -56,8 +56,8 @@ system_ge = pp.opts.Opts(
 # Sequence flags
 # ========================================== #
 # Flags for sequence writing
-FLAG_GE = True # Write sequence for GE?
-FLAG_SIM = False # Also write a sequence for simulation with BMCTool?
+FLAG_GE = False # Write sequence for GE?
+FLAG_SIM = True # Also write a sequence for simulation with BMCTool?
 
 # ZSPEC: when True, ONLY the ZSPEC offsets are written (the offsets_ppm
 # loop below is skipped entirely). On Siemens this is ONE combined
@@ -383,11 +383,12 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
 
         for seq in seqs:
             seq.add_block(rf_exc, gz_exc, calib_label)
-            seq.add_block(gzr)
             if seq is seq_scan:
+                seq.add_block(gzr)
                 seq.add_block(gx_ro_ref, gy_ro_ref, adc)
                 seq.add_block(gx_rew_ref, gy_rew_ref, gz_spoil)
             else:
+                seq.add_block(pp.make_delay(pp.calc_duration(gzr)))
                 seq.add_block(adc_sim)
                 dummy_delay = readout_duration - pp.calc_duration(adc_sim)
                 seq.add_block(pp.make_delay(dummy_delay))
@@ -430,8 +431,8 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
 
             # Excitation
             seq.add_block(rf_exc, gz_exc, exc_label)
-            seq.add_block(gzr)
             if seq is seq_scan:
+                seq.add_block(gzr)
                 # Real spiral readout
                 # 1.5.1 with rotation extension
                 if USE_ROTATION:
@@ -440,6 +441,7 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
                     seq.add_block(rot, gx_rew_ref, gy_rew_ref, gz_spoil)
                 # 1.4.2 without rotation extension
                 else:
+                    seq.add_block(pp.make_delay(pp.calc_duration(gzr)))
                     seq.add_block(gx_ro, gy_ro, adc, ro_label)
                     seq.add_block(gx_rew, gy_rew, gz_spoil)
                     if pad > 0:
@@ -448,7 +450,10 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
                 seq.add_block(adc_sim)
                 dummy_delay = readout_duration - pp.calc_duration(adc_sim)
                 seq.add_block(pp.make_delay(dummy_delay))
-                seq.add_block(pp.make_delay(max_rewinder_duration))
+                seq.add_block(gz_spoil)
+                pad = max_rewinder_duration - pp.calc_duration(gz_spoil)
+                if pad > 0:
+                    seq.add_block(pp.make_delay(pad))
 
         # Increment RF spoiling phase
         rf_inc = divmod(rf_inc + rf_spoiling_inc, 360.0)[1]
