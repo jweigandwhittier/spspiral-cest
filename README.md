@@ -2,6 +2,10 @@
 
 *Code for cardiac CEST (with spatial-spectral saturation) using VD spiral readouts in Pulseq*
 
+### CEST-weighted CINE
+
+![Reference](gifs/MID00042_FID139550_gauss_ref_cardiac_cine.gif) ![2 ppm](gifs/MID00043_FID139551_gauss_2ppm_cardiac_cine.gif) ![-2 ppm](gifs/MID00044_FID139552_gauss__2ppm_cardiac_cine.gif)
+
 ## Instructions
 
 To use these sequences on your scanner (with and without spatial-spectral saturation pulses), follow the instructions below.
@@ -12,12 +16,13 @@ To use these sequences on your scanner (with and without spatial-spectral satura
    * Run `conda env create -f environment.yml`
      * Two environment files are included (`environment.yml` and `environment_legacy.yml`) — see the [**Environments**](#environments) section below for details
    * Activate the environment with `conda activate spspiral-cest`
-3. Write a .seq file using [LINK FILE HERE]
+3. Write a .seq file using [continuous_spiral.py](continuous_spiral.py)
    * The script contains various flags, which should be set based on the user's preferences. CEST prep and readout parameters can also be changed, but the sequence may no longer work as designed.
      * To write a generic SPSP pulse (e.g., an SPSP pulse with no gradients, only the spectral envelope and subpulse design) use `FLAG_GENERIC`
      * To use a tailored SPSP pulse (e.g., for inhomogeneous B1), a corresponding B1 map is required. This can be either a DICOM (Siemens or GE) or an .npy file with a corresponding .seq file with defined matrix size and FOV.
 4. Deploy the .seq file on the scanner and acquire images (details coming soon)!
-5. Reconstruct (details coming soon).
+5. Reconstruct images using [recon_core.py](recon_core.py)
+     * After images are reconstructed from raw data, MT<sub>asym</sub> or Z-spectra can be reconstructed using [recon_mtrasym_example.py](recon_mtr_asym_example.py) and [recon_zspec_example.py](recon_zspec_example.py) respectively
 
 ## Environments
 
