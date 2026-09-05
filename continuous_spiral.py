@@ -56,8 +56,8 @@ system_ge = pp.opts.Opts(
 # Sequence flags
 # ========================================== #
 # Flags for sequence writing
-FLAG_GE = False # Write sequence for GE?
-FLAG_SIM = True # Also write a sequence for simulation with BMCTool?
+FLAG_GE = True # Write sequence for GE?
+FLAG_SIM = False # Also write a sequence for simulation with BMCTool?
 
 # ZSPEC: when True, ONLY the ZSPEC offsets are written (the offsets_ppm
 # loop below is skipped entirely). On Siemens this is ONE combined
@@ -167,7 +167,7 @@ offsets_ppm = [75.00, 2.00, -2.00]
 tissue_t1 = 1.2 # Assumed tissue/phantom T1 [s]; used for ZSPEC inter-offset recovery delay
 
 # Readout parameters
-fov = 150e-3 # Field of view [m] (try 300 mm for patients, 150 mm for phantom)
+fov = 300e-3 # Field of view [m] (try 300 mm for patients, 150 mm for phantom)
 nx = 128 # Matrix size
 n_interleaves = 12 # Number of spiral interleaves (for "fully" sampled k-space minus VD)
 slice_thickness = 8e-3 # Slice thickness [m]

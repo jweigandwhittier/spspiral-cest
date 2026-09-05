@@ -11,11 +11,51 @@ import sigpy.mri as mr
 import torch
 import torchkbnufft as tkbn
 import matplotlib.pyplot as plt
+from packaging.version import Version
 
-def adjoint_nufft(ksp, traj, nx, fov):
+def _adjoint_nufft_core(ksp, kx_full, ky_full, nx, fov):
     """
-    Simple adjoint NUFFT for VDS acquisition with DCF. Can be used for phantom data with 
+    Shared adjoint-NUFFT + DCF + RSS coil combination, given kx/ky already
+    shaped as [n_trs, n_adc] and correctly rotated per-TR.
+
+    Parameters
+    ----------
+    ksp: k-space [n_adc, n_trs, n_coils]
+    kx_full, ky_full: [n_trs, n_adc] k-space coordinates, same units as
+        traj from seq.calculate_kspace (1/m, prior to pixel_size scaling)
+    nx: Nominal matrix size (isotropic), from sequence definitions
+    fov: FOV from sequence definitions
+
+    Returns
+    -------
+    combined: Image with RSS coil combination
+    """
+    nx = int(nx)
+    n_coils = ksp.shape[2]
+    pixel_size = fov / nx
+    im_size = [nx, nx]
+    omega = np.stack([kx_full.ravel(), ky_full.ravel()]) * pixel_size * 2 * np.pi
+    omega_t = torch.from_numpy(omega).to(torch.float32).unsqueeze(0)
+    data_flat = ksp.transpose(2, 1, 0).reshape(n_coils, -1)
+    sig_t = torch.from_numpy(data_flat).unsqueeze(0).to(torch.complex64)
+    dcomp = tkbn.calc_density_compensation_function(omega_t, im_size)
+    adjnufft_ob = tkbn.KbNufftAdjoint(im_size=im_size)
+    img = adjnufft_ob(sig_t * dcomp, omega_t)
+    img = img[0].cpu().numpy()
+    combined = np.sqrt(np.sum(np.abs(img) ** 2, axis=0))
+    combined = np.rot90(combined, k=3)
+    return combined
+
+
+def adjoint_nufft(ksp, traj, nx, fov, tr_offset=0):
+    """
+    Simple adjoint NUFFT for VDS acquisition with DCF. Can be used for phantom data with
     no cardiac motion.
+
+    Assumes `traj` (from seq.calculate_kspace) already contains correctly
+    rotated per-TR trajectory samples in chronological order -- do NOT use
+    this on a trajectory where calculate_kspace() dropped the rotation
+    extension (see adjoint_nufft_from_traj for that case).
 
     Parameters
     ----------
@@ -26,28 +66,94 @@ def adjoint_nufft(ksp, traj, nx, fov):
 
     Returns
     -------
-    combined: Image with RSS coil combination 
+    combined: Image with RSS coil combination
     """
-    nx = int(nx)
     n_adc = ksp.shape[0]
     n_trs = ksp.shape[1]
-    n_coils = ksp.shape[2]
     total_samples = n_adc * n_trs
-    kx_full = traj[0, :total_samples].reshape(n_trs, n_adc)
-    ky_full = traj[1, :total_samples].reshape(n_trs, n_adc)
-    pixel_size = fov / nx
-    im_size = [nx, nx]
-    omega = np.stack([kx_full.ravel(), ky_full.ravel()]) * pixel_size * 2 * np.pi
-    omega_t = torch.from_numpy(omega).to(torch.float32).unsqueeze(0) 
-    data_flat = ksp.transpose(2, 1, 0).reshape(n_coils, -1)  
-    sig_t = torch.from_numpy(data_flat).unsqueeze(0).to(torch.complex64)  
-    dcomp = tkbn.calc_density_compensation_function(omega_t, im_size)
-    adjnufft_ob = tkbn.KbNufftAdjoint(im_size=im_size)
-    img = adjnufft_ob(sig_t * dcomp, omega_t)         
-    img = img[0].cpu().numpy()                        
-    combined = np.sqrt(np.sum(np.abs(img) ** 2, axis=0))
-    combined = np.rot90(combined, k=3)
-    return combined
+    start = tr_offset * n_adc
+    end = start + total_samples
+    kx_full = traj[0, start:end].reshape(n_trs, n_adc)
+    ky_full = traj[1, start:end].reshape(n_trs, n_adc)
+    return _adjoint_nufft_core(ksp, kx_full, ky_full, nx, fov)
+
+def seq_uses_rotation_extension(seq):
+    """
+    calculate_kspace() ignores the rotext ROTATION extension entirely --
+    it returns the same unrotated reference arm for every TR when a
+    sequence was written using pp.make_rotation() (PyPulseq >=1.5.0 rotext
+    fork). Sequences written with plain PyPulseq 1.4.2 instead bake the
+    per-TR rotation directly into each block's gradient waveform, so
+    calculate_kspace() already returns correctly rotated per-TR trajectory.
+
+    Detected from the Pulseq spec version recorded in the .seq file itself
+    (mirrors the same 1.5.0 threshold continuous_spiral.py uses to decide
+    USE_ROTATION at write time) -- NOT the currently-installed PyPulseq
+    version, which may differ from whatever wrote this particular file.
+    """
+    version = Version(f"{seq.version_major}.{seq.version_minor}.{seq.version_revision}")
+    return version >= Version("1.5.0")
+
+
+def get_rotated_trajectory(seq, k_traj_adc, n_adc, n_trs, pislquant):
+    """
+    Returns kx_full, ky_full as [n_trs, n_adc], correctly rotated per-TR,
+    for the n_trs MAIN TRs only (calibration TRs already excluded from the
+    output, though still accounted for via `pislquant` when indexing into
+    k_traj_adc).
+
+    NOTE: reads seq.definitions['RotationAngles_rad'], which is only set by
+    build_and_save_single_offset_seq() -- i.e. the non-ZSPEC offsets_ppm loop
+    and the per-offset GE ZSPEC branch. The combined-Siemens-ZSPEC sequence
+    (one .seq sweeping all zspec_offsets_ppm) does NOT set this definition;
+    reconstructing that file needs angles rebuilt from
+    golden_angle * np.arange(n_trs) instead, and this function will raise
+    a KeyError as a signal to do that rather than silently misbehaving.
+    """
+    start = pislquant * n_adc  # skip calibration TRs (present in k_traj_adc, no dead TR here)
+
+    if seq_uses_rotation_extension(seq):
+        angles = np.array(seq.definitions['RotationAngles_rad'])
+        assert len(angles) == n_trs, \
+            f"RotationAngles_rad length {len(angles)} != N_TRs {n_trs}"
+
+        kx_ref = k_traj_adc[0, :n_adc]
+        ky_ref = k_traj_adc[1, :n_adc]
+
+        c = np.cos(angles)[:, None]
+        s = np.sin(angles)[:, None]
+        kx_full = kx_ref[None, :] * c - ky_ref[None, :] * s
+        ky_full = kx_ref[None, :] * s + ky_ref[None, :] * c
+    else:
+        total_samples = n_adc * n_trs
+        kx_full = k_traj_adc[0, start:start + total_samples].reshape(n_trs, n_adc)
+        ky_full = k_traj_adc[1, start:start + total_samples].reshape(n_trs, n_adc)
+
+    return kx_full, ky_full
+
+
+def adjoint_nufft_from_traj(ksp, kx_full, ky_full, nx, fov):
+    """
+    Adjoint NUFFT variant that takes kx/ky trajectory arrays directly,
+    already shaped [n_trs, n_adc] and rotated per-TR -- for use when
+    seq.calculate_kspace() can't be trusted to apply per-TR rotation
+    (see seq_uses_rotation_extension / get_rotated_trajectory).
+
+    Parameters
+    ----------
+    ksp: k-space from full acquisition like [n_samples, n_trs, n_coils]
+    kx_full, ky_full: [n_trs, n_adc] per-TR rotated trajectory
+    nx: Nominal matrix size (isotropic), from sequence definitions
+    fov: FOV from sequence definitions
+
+    Returns
+    -------
+    combined: Image with RSS coil combination
+    """
+    n_trs = ksp.shape[1]
+    assert kx_full.shape == (n_trs, ksp.shape[0]), \
+        f"kx_full shape {kx_full.shape} doesn't match ksp (n_trs={n_trs}, n_adc={ksp.shape[0]})"
+    return _adjoint_nufft_core(ksp, kx_full, ky_full, nx, fov)
 
 def estimate_burnin(nav_mag, tol=0.02, min_burnin=5, max_burnin=None, plot=False):
     """Fit an exponential approach-to-steady-state curve to the mean

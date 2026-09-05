@@ -12,7 +12,7 @@ assert scanner in ('ge', 'siemens'), "scanner must be 'ge' or 'siemens'"
 paths = {
     'ge': {
         'data_dir': 'data/raw/ge/example/Exam785',  # Parent directory for GE
-        'seq_fn': 'sequences/ge/continuous_spiral_gauss_75p0_ppm_ge.seq',  # Sequence for GE (with calibration)
+        'seq_fn': 'sequences/ge/continuous_spiral_zspec_gauss_75p0_ppm_ge.seq',  # Sequence for GE (with calibration)
     },
     'siemens': {
         'data_dir': 'data/raw/siemens/example/meas_MID00190_FID50697_pulseq.dat',  # Data file for Siemens
@@ -50,24 +50,30 @@ elif scanner == 'siemens':
     _, ksp_all, _ = extract_raw.extract_kspace(data_dir)
 
 # %% Step 2: Get trajectory and recon info from Pulseq
-# Get trajectory info
+from utils import recon
+
 seq = extract_raw.load_seq(seq_fn)
 k_traj_adc, _, _, _, t_adc = seq.calculate_kspace(trajectory_delay=0)
-# Get nominal matrix size
+
 nx = seq.definitions['Nx']
 fov = seq.definitions['FOV'][0]
-# Get calibration scan info
+n_adc = int(seq.definitions['MaxAdcSegmentLength'])
 n_trs = int(seq.definitions['N_TRs'])
-# Discard calibrations scans
-ksp_real = ksp_all[:, :, 1:n_trs + 1, :]
+pislquant = int(seq.definitions.get('pislquant', 0))  # 0 for Siemens, set explicitly for GE
+n_extra = 1 if scanner == 'ge' else 0
+
+kx_full, ky_full = recon.get_rotated_trajectory(seq, k_traj_adc, n_adc, n_trs, pislquant)
+
+# Discard calibration + dead-TR scans from raw ksp
+main_start = n_extra + pislquant
+ksp_real = ksp_all[:, :, main_start:main_start + n_trs, :]
 
 # %% Step 3: Reconstruct images
-from utils import recon
 n_offsets = ksp_real.shape[0]
 image_stack = []
 for i in range(n_offsets):
     ksp_offset = ksp_real[i, :, :, :]
-    image = recon.adjoint_nufft(ksp_offset, k_traj_adc, nx, fov)
+    image = recon.adjoint_nufft_from_traj(ksp_offset, kx_full, ky_full, nx, fov)
     image_stack.append(image)
 
 # %% Step 4: Draw ROI on reference image and construct Z-spectrum

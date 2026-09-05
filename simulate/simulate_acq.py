@@ -21,7 +21,7 @@ from bmctool.simulation.BMCSim import BMCSim
 # ========================================== #
 # Config
 # ========================================== #
-CONFIG_YAML = 'config_5pool.yaml'
+CONFIG_YAML = 'config_7pool.yaml'
 
 # Combined Siemens ZSPEC sim .seq file written by continuous_spiral.py
 # (FLAG_ZSPEC=True, FLAG_GE=False, FLAG_SIM=True).
@@ -38,8 +38,8 @@ REF_OFFSET_PPM = 75.0  # far-offset pseudo-M0 reference for normalization
 MTR_ASYM_MIN_PPM = 0.2
 MTR_ASYM_MAX_PPM = 10.0
 
-OUT_PNG = 'continuous_spiral_zspec_5pool_sim.png'
-OUT_NPZ = 'continuous_spiral_zspec_5pool_sim.npz'
+OUT_PNG = 'continuous_spiral_zspec_7pool_sim.png'
+OUT_NPZ = 'continuous_spiral_zspec_7pool_sim.npz'
 
 
 # ========================================== #

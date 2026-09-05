@@ -194,25 +194,40 @@ valid_phase = best_phase[n_burnin:]
 valid_data = ksp[n_burnin:]
 
 #%% Step 6: Gradient delay correction and steady-state cutoff
-total_samples = n_total_acq * n_samples
-kx_full_raw = k_traj_adc[0, :total_samples].reshape(n_total_acq, n_samples)
-ky_full_raw = k_traj_adc[1, :total_samples].reshape(n_total_acq, n_samples)
-kz_full_raw = (k_traj_adc[2, :total_samples] if k_traj_adc.shape[0] >= 3
-               else np.zeros(total_samples)).reshape(n_total_acq, n_samples)
-t_adc_full = t_adc[:total_samples]
+n_trs = int(defs['N_TRs'])
+n_adc = n_samples
+n_extra = 1 if vendor == 'ge' else 0  # Raw ksp is one TR longer than the .seq file on GE only
+pislquant = int(defs.get('pislquant', 0))  # 0 for Siemens, set explicitly for GE
 
-if meas is not None: # Get geometry from TWIX if available
+main_start = n_extra + pislquant
+assert n_total_acq >= main_start + n_trs, (
+    f"ksp has {n_total_acq} TRs, but main_start ({main_start}) + N_TRs ({n_trs}) "
+    f"= {main_start + n_trs} exceeds that -- check n_extra/pislquant against "
+    f"this file's actual layout before trusting the slicing below."
+)
+
+ksp_main = ksp[main_start:main_start + n_trs]
+
+kx_full_raw, ky_full_raw = recon.get_rotated_trajectory(seq, k_traj_adc, n_adc, n_trs, pislquant)
+
+start = pislquant * n_adc
+total_samples = n_adc * n_trs
+kz_full_raw = (k_traj_adc[2, start:start + total_samples] if k_traj_adc.shape[0] >= 3
+               else np.zeros(total_samples)).reshape(n_trs, n_adc)
+t_adc_full = t_adc[start:start + total_samples]
+
+if meas is not None:  # Get geometry from TWIX if available (Siemens)
     geom = meas['geometry'][0]
     R_log2phys = np.column_stack([geom.rps_to_xyz() @ e for e in np.eye(3)])
     print("R (logical->physical, DCS):\n", R_log2phys)
-    
+
     tau_vec = np.array([tau_phys['X'], tau_phys['Y'], tau_phys['Z']])
     k_logical_full = np.stack([kx_full_raw.ravel(), ky_full_raw.ravel(), kz_full_raw.ravel()])
     k_corrected_full = recon.apply_axis_delay_correction(t_adc_full, k_logical_full, R_log2phys, tau_vec)
 
-    kx_full = k_corrected_full[0].reshape(n_total_acq, n_samples)
-    ky_full = k_corrected_full[1].reshape(n_total_acq, n_samples)
-else: # GE -- no geometry source wired up yet, skip axis-delay correction
+    kx_full = k_corrected_full[0].reshape(n_trs, n_adc)
+    ky_full = k_corrected_full[1].reshape(n_trs, n_adc)
+else:  # GE -- no geometry source wired up yet, skip axis-delay correction
     print("GE data: R_log2phys not available, skipping axis-delay correction "
           "(using nominal trajectory)")
     kx_full = kx_full_raw
