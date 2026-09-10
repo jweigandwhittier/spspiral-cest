@@ -65,7 +65,7 @@ And install the one matching your MATLAB version number (e.g., for MATLAB R2025a
 
 A Pulseq .seq file must be converted to the pge2 format before it can be run on GE hardware. This is a multi-step process requiring source code for both [pge2](https://github.com/HarmonizedMRI/pge2/tree/main) and [Pulseg](https://github.com/HarmonizedMRI/pulseg). Both of these repositories should cloned in *this repository's parent directory*. 
 
-This repository contains a script to automatically convert a sequence to the pge2 format when it is written: [convert_pge2.mat](convert_pge2.mat). This is an example script, and several site-specific parameters *must* be changed before it is used. **Please read the comments carefully**.
+This repository contains a script to automatically convert a sequence to the pge2 format when it is written: [convert_pge2.m](convert_pge2.m). This is an example script, and several site-specific parameters *must* be changed before it is used. **Please read the comments carefully**.
 
 This script also writes a Shell script to automatically deploy the .pge2 file and an associated .entry file on the scanner. For more information regarding Pulseq for GE, please refer to the excellent [GE Pulseq interpreter wiki](https://github.com/GEHC-External/pulseq-ge-interpreter/wiki).
 
