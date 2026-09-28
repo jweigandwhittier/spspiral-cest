@@ -10,13 +10,13 @@ from utils import extract_raw
 #%% Step 1: Reconstruct image
 from utils import recon
 
-data_fn = 'data/raw/ge/Exam787/Series6/ScanArchive_UCB3TMR_20260904_170011722.h5'
-seq_fn = 'sequences/ge/continuous_spiral_zspec_gauss_75p0_ppm_ge.seq'
+data_fn = 'data/raw/ge/Exam797/Series37/ScanArchive_UCB3TMR_20260916_174227694.h5'
+seq_fn = 'sequences/ge/continuous_spiral_gauss_75p0_ppm_ge.seq'
 
 _, ksp, _, vendor = extract_raw.extract_kspace(data_fn)
 
 seq = extract_raw.load_seq(seq_fn)
-k_traj_adc, _, _, _, t_adc = seq.calculate_kspace(trajectory_delay=2e-6)
+k_traj_adc, _, _, _, t_adc = seq.calculate_kspace(trajectory_delay=0)
 
 # Get nominal matrix size
 nx = seq.definitions['Nx']

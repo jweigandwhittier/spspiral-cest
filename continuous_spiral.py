@@ -7,12 +7,14 @@ Created on Fri Jul 24 15:08:17 2026
 """
 import os
 import sys
+import copy
 from pathlib import Path
 import numpy as np
 import pypulseq as pp
+from pypulseq.convert import convert
 from seqeyes import seqeyes
 from packaging.version import Version
-from utils import vds, spsp, prep_pge2
+from utils import vds, spsp, prep_pge2, spsp_exc
 
 # ========================================== #
 # Hardware limits
@@ -22,6 +24,10 @@ from utils import vds, spsp, prep_pge2
 # ========================================== #
 DESIGN_MAX_GRAD = 30   # mT/m
 DESIGN_MAX_SLEW = 78   # mT/m/ms
+
+# Limits used ONLY for the SPSP excitation design (FLAG_SPSP_EXC)
+EXC_MAX_GRAD = 80   # mT/m
+EXC_MAX_SLEW = 130  # mT/m/ms
 
 # Siemens 3T
 system = pp.opts.Opts(
@@ -56,7 +62,7 @@ system_ge = pp.opts.Opts(
 # Sequence flags
 # ========================================== #
 # Flags for sequence writing
-FLAG_GE = True # Write sequence for GE?
+FLAG_GE = False # Write sequence for GE?
 FLAG_SIM = False # Also write a sequence for simulation with BMCTool?
 
 # ZSPEC: when True, ONLY the ZSPEC offsets are written (the offsets_ppm
@@ -66,15 +72,17 @@ FLAG_SIM = False # Also write a sequence for simulation with BMCTool?
 FLAG_ZSPEC = False
 
 # Site selection - drives conversion wait params + deployment locations, see prep_pge2.py
-SITE = "berkeley" # "site1" or "site2", edit this for your own sites (see prep_pge2_example.py)
+SITE = "ucsf" # "site1" or "site2", edit this for your own sites (see prep_pge2_example.py)
 FLAG_DEPLOY = True # Also generate/run the pge2 deploy script?
 
 # SPSP pulse flags
 FLAG_SPSP = False # Use SPSP pulses?
 FLAG_GENERIC = True # If using SPSP pulses, use generic pulse?
+FLAG_SPSP_EXC = True # SPSP for excitation with lipid suppression?
+FLAG_SPSP_EXC_VERIFY = False # Bloch-sim check of the SPSP excitation (prints report; plots if FLAG_PLOT)
 
 # Plotting and visualization flags 
-FLAG_SEQEYES = False
+FLAG_SEQEYES = True
 FLAG_PLOT = False # Also for plotting with GE
 
 # Other flags
@@ -156,6 +164,7 @@ else:
 # ========================================== #
 # General parameters
 seq_dur = 12 # Total desired duration of the sequence [s]
+flip_angle = 16.5 # [deg]; (12deg based on sim for T1 = 1.3 s, using 16.5deg at CBL)
 
 # CEST parameters
 b1p = 1.20 # Saturation pulse peak B1 amplitude [uT]
@@ -167,12 +176,20 @@ offsets_ppm = [75.00, 2.00, -2.00]
 tissue_t1 = 1.2 # Assumed tissue/phantom T1 [s]; used for ZSPEC inter-offset recovery delay
 
 # Readout parameters
-fov = 300e-3 # Field of view [m] (try 300 mm for patients, 150 mm for phantom)
+fov = 300e-3 # Field of view [m] (try 300 mm for patients, 200 mm for phantom)
 nx = 128 # Matrix size
 n_interleaves = 12 # Number of spiral interleaves (for "fully" sampled k-space minus VD)
-slice_thickness = 8e-3 # Slice thickness [m]
+slice_thickness = 8e-3 # Slice thickness [m] (try 8 mm for patients, 10 mm for phantom)
 adc_dwell = 10e-6 # Hardcode this to preserve readout bandwidth (BWPP --> SNR)
 rf_spoiling_inc = 117 # [deg]
+
+# SPSP excitation parameters (used only if FLAG_SPSP_EXC)
+spsp_exc_tbw = 2.0 # Spatial sub-pulse time-bandwidth product (plateau-only RF)
+spsp_exc_n_sub = 7 # Number of sub-pulses (odd)
+spsp_exc_fat_ppm = -3.4 # Lipid resonance to null, relative to water [ppm]
+spsp_exc_pb_hw = 100.0 # Water passband half-width [Hz]
+spsp_exc_sb_hw = 100.0 # Stopband half-width around the lipid null [Hz]
+spsp_exc_slice_offset = 0.0 # Slice offset [m]; applied as RF phase modulation, NOT freq_offset
 
 # GE specific parameters
 pislquant = 4 if FLAG_GE else 0
@@ -209,7 +226,7 @@ zspec_recovery_delay_s = align_to_raster(5 * tissue_t1)
 
 # Write dummy excitation
 rf_exc, gz_exc, gzr = pp.make_sinc_pulse(
-    flip_angle = np.deg2rad(12.0), # Based on sim for T1 = 1.3 s
+    flip_angle = np.deg2rad(flip_angle), # Based on sim for T1 = 1.3 s
     duration = 1e-3, # [s]
     slice_thickness = slice_thickness,
     apodization = 0.5,
@@ -218,6 +235,37 @@ rf_exc, gz_exc, gzr = pp.make_sinc_pulse(
     return_gz = True,
     delay = system.rf_dead_time,
     use = 'excitation')
+# Keep the sinc slice-select area as the spoiler reference so the spoiler
+# is identical with and without the SPSP excitation.
+gz_exc_ref_area = gz_exc.area
+
+# SPSP water excitation with an exact lipid null (replaces the sinc).
+# Designed with the EXC_* limits but on this system's rasters (GE 4/2 us).
+# The slice refocus is built into gz_exc, so there is no separate gzr.
+if FLAG_SPSP_EXC:
+    system_exc = copy.deepcopy(system)
+    system_exc.max_grad = convert(from_value=EXC_MAX_GRAD, from_unit='mT/m', gamma=system.gamma)
+    system_exc.max_slew = convert(from_value=EXC_MAX_SLEW, from_unit='T/m/s', gamma=system.gamma)
+    rf_exc, gz_exc, spsp_exc_info = spsp_exc.design_spsp_exc(
+        system_exc,
+        flip_angle = np.deg2rad(flip_angle),
+        slice_thickness = slice_thickness,
+        tbw = spsp_exc_tbw,
+        n_sub = spsp_exc_n_sub,
+        fat_ppm = spsp_exc_fat_ppm,
+        pb_hw = spsp_exc_pb_hw,
+        sb_hw = spsp_exc_sb_hw,
+        slice_offset = spsp_exc_slice_offset)
+    gzr = None
+    print(f"SPSP excitation: T_s {spsp_exc_info.T_s*1e3:.3f} ms, "
+          f"lipid null at {spsp_exc_info.f_fat:.1f} Hz, "
+          f"block {spsp_exc_info.block_duration*1e3:.2f} ms, "
+          f"RF centre {spsp_exc_info.rf_center*1e3:.3f} ms from block start, "
+          f"peak B1 {spsp_exc_info.peak_b1_uT:.2f} uT")
+    if FLAG_SPSP_EXC_VERIFY:
+        spsp_exc.verify_spsp(rf_exc, gz_exc, spsp_exc_info,
+                             dt=system.rf_raster_time, plot=FLAG_PLOT)
+gzr_duration = pp.calc_duration(gzr) if gzr is not None else 0.0
 
 # Spiral parameters
 resolution = fov / nx
@@ -270,7 +318,7 @@ gy_rew_ref, *_ = pp.make_extended_trapezoid_area(
 
 # Write spoiler
 n_cycles = 4
-spoil_area = n_cycles / slice_thickness - gz_exc.area / 2
+spoil_area = n_cycles / slice_thickness - gz_exc_ref_area / 2
 
 gz_spoil = pp.make_trapezoid(channel='z', area=spoil_area, system=system_rotation_design)
     
@@ -319,7 +367,7 @@ gx_spoil_cest, gy_spoil_cest, gz_spoil_cest = [
 prep_duration = pp.calc_duration(sat_pulse) + pp.calc_duration(gx_spoil_cest, gy_spoil_cest, gz_spoil_cest)
 print(f"CEST Prep Duration: {prep_duration * 1000:.2f} ms")
 # Excitation
-exc_duration = pp.calc_duration(rf_exc, gz_exc) + pp.calc_duration(gzr)
+exc_duration = pp.calc_duration(rf_exc, gz_exc) + gzr_duration
 print(f"Excitation Duration: {exc_duration * 1000:.2f} ms")
 # Readout (+ rewinder/spoiler)
 readout_duration = pp.calc_duration(gx_ro_ref, gy_ro_ref)
@@ -384,11 +432,13 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
         for seq in seqs:
             seq.add_block(rf_exc, gz_exc, calib_label)
             if seq is seq_scan:
-                seq.add_block(gzr)
+                if gzr is not None:
+                    seq.add_block(gzr)
                 seq.add_block(gx_ro_ref, gy_ro_ref, adc)
                 seq.add_block(gx_rew_ref, gy_rew_ref, gz_spoil)
             else:
-                seq.add_block(pp.make_delay(pp.calc_duration(gzr)))
+                if gzr_duration > 0:
+                    seq.add_block(pp.make_delay(gzr_duration))
                 seq.add_block(adc_sim)
                 dummy_delay = readout_duration - pp.calc_duration(adc_sim)
                 seq.add_block(pp.make_delay(dummy_delay))
@@ -432,7 +482,8 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
             # Excitation
             seq.add_block(rf_exc, gz_exc, exc_label)
             if seq is seq_scan:
-                seq.add_block(gzr)
+                if gzr is not None:
+                    seq.add_block(gzr)
                 # Real spiral readout
                 # 1.5.1 with rotation extension
                 if USE_ROTATION:
@@ -441,19 +492,21 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
                     seq.add_block(rot, gx_rew_ref, gy_rew_ref, gz_spoil)
                 # 1.4.2 without rotation extension
                 else:
-                    seq.add_block(pp.make_delay(pp.calc_duration(gzr)))
                     seq.add_block(gx_ro, gy_ro, adc, ro_label)
                     seq.add_block(gx_rew, gy_rew, gz_spoil)
                     if pad > 0:
                         seq.add_block(pp.make_delay(pad))
             else:
+                # Match the scan timing: the scan plays gzr before the readout
+                if gzr_duration > 0:
+                    seq.add_block(pp.make_delay(gzr_duration))
                 seq.add_block(adc_sim)
                 dummy_delay = readout_duration - pp.calc_duration(adc_sim)
                 seq.add_block(pp.make_delay(dummy_delay))
                 seq.add_block(gz_spoil)
-                pad = max_rewinder_duration - pp.calc_duration(gz_spoil)
-                if pad > 0:
-                    seq.add_block(pp.make_delay(pad))
+                pad_sim = max_rewinder_duration - pp.calc_duration(gz_spoil)
+                if pad_sim > 0:
+                    seq.add_block(pp.make_delay(pad_sim))
 
         # Increment RF spoiling phase
         rf_inc = divmod(rf_inc + rf_spoiling_inc, 360.0)[1]
@@ -511,6 +564,17 @@ def convert_and_queue_for_ge(seq_filename, description):
         })
 
 
+def set_exc_definitions(seq_scan):
+    """Record the excitation type (and SPSP design) in the .seq definitions."""
+    seq_scan.set_definition('ExcPulse', 'spsp_fatnull' if FLAG_SPSP_EXC else 'sinc')
+    if FLAG_SPSP_EXC:
+        seq_scan.set_definition('ExcRFCenter', float(spsp_exc_info.rf_center))
+        seq_scan.set_definition('ExcSubPulsePeriod', float(spsp_exc_info.T_s))
+        seq_scan.set_definition('ExcNSub', int(spsp_exc_n_sub))
+        seq_scan.set_definition('ExcTBW', float(spsp_exc_tbw))
+        seq_scan.set_definition('ExcFatNull_Hz', float(spsp_exc_info.f_fat))
+
+
 def build_and_save_single_offset_seq(seq_name, offset_ppm):
     """
     Shared helper: given a seq_name and a single offset_ppm, builds a fresh
@@ -546,6 +610,8 @@ def build_and_save_single_offset_seq(seq_name, offset_ppm):
     seq_scan.set_definition('N_TRs', n_trs)
     seq_scan.set_definition('TR', tr)
     seq_scan.set_definition('Nx', nx)
+    seq_scan.set_definition('FlipAngle', flip_angle)
+    set_exc_definitions(seq_scan)
     seq_scan.set_definition('MaxAdcSegmentLength', adc_total_samples)
     seq_scan.set_definition('pislquant', pislquant)
     seq_scan.set_definition('RotationAngles_rad', [float(a) for a in angles])
@@ -572,6 +638,7 @@ def build_and_save_single_offset_seq(seq_name, offset_ppm):
 
 pulse_type = 'gauss' if not FLAG_SPSP else 'spsp'
 scanner = '' if not FLAG_GE else '_ge'
+exc_tag = '_spspexc' if FLAG_SPSP_EXC else ''
 
 if not FLAG_ZSPEC:
     # ========================================== #
@@ -579,7 +646,7 @@ if not FLAG_ZSPEC:
     # ========================================== #
     for offset_idx, offset_ppm in enumerate(offsets_ppm):
         offset_str = str(offset_ppm).replace('.', 'p')
-        seq_name = f'continuous_spiral_{pulse_type}_{offset_str}_ppm{scanner}'
+        seq_name = f'continuous_spiral_{pulse_type}_{offset_str}_ppm{exc_tag}{scanner}'
 
         seq_filename = build_and_save_single_offset_seq(seq_name, offset_ppm)
 
@@ -597,7 +664,7 @@ elif FLAG_GE:
     # ========================================== #
     for zidx, offset_ppm in enumerate(zspec_offsets_ppm):
         offset_str = str(offset_ppm).replace('.', 'p')
-        seq_name = f'continuous_spiral_zspec_{pulse_type}_{offset_str}_ppm{scanner}'
+        seq_name = f'continuous_spiral_zspec_{pulse_type}_{offset_str}_ppm{exc_tag}{scanner}'
 
         seq_filename = build_and_save_single_offset_seq(seq_name, offset_ppm)
 
@@ -623,7 +690,7 @@ else:
             for seq in seqs:
                 seq.add_block(pp.make_delay(zspec_recovery_delay_s))
 
-    seq_name = f'continuous_spiral_zspec_{pulse_type}{scanner}'
+    seq_name = f'continuous_spiral_zspec_{pulse_type}{exc_tag}{scanner}'
 
     for seq in seqs:
         ok, error_report = seq.check_timing()
@@ -641,6 +708,9 @@ else:
     seq_scan.set_definition('Offsets_ppm', [float(o) for o in zspec_offsets_ppm])
     seq_scan.set_definition('N_TRs_per_offset', n_trs)
     seq_scan.set_definition('TR', tr)
+    seq_scan.set_definition('Nx', nx)
+    seq_scan.set_definition('FlipAngle', flip_angle)
+    set_exc_definitions(seq_scan)
     seq_scan.set_definition('RecoveryDelay', float(zspec_recovery_delay_s))
     seq_scan.set_definition('MaxAdcSegmentLength', adc_total_samples)
     seq_scan.set_definition('RotationAngles_rad', [float(a) for a in angles])

@@ -94,7 +94,6 @@ def seq_uses_rotation_extension(seq):
     version = Version(f"{seq.version_major}.{seq.version_minor}.{seq.version_revision}")
     return version >= Version("1.5.0")
 
-
 def get_rotated_trajectory(seq, k_traj_adc, n_adc, n_trs, pislquant):
     """
     Returns kx_full, ky_full as [n_trs, n_adc], correctly rotated per-TR,

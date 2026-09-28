@@ -11,8 +11,8 @@ assert scanner in ('ge', 'siemens'), "scanner must be 'ge' or 'siemens'"
 
 paths = {
     'ge': {
-        'data_dir': 'data/raw/ge/example/Exam785',  # Parent directory for GE
-        'seq_fn': 'sequences/ge/continuous_spiral_zspec_gauss_75p0_ppm_ge.seq',  # Sequence for GE (with calibration)
+        'data_dir': 'data/raw/ge/Exam797',  # Parent directory for GE
+        'seq_fn': 'sequences/ge/continuous_spiral_gauss_75p0_ppm_ge.seq',  # Sequence for GE (with calibration)
     },
     'siemens': {
         'data_dir': 'data/raw/siemens/example/meas_MID00190_FID50697_pulseq.dat',  # Data file for Siemens
@@ -104,3 +104,35 @@ fit = cf.two_step(z_spectrum[1:], offsets_ppm[1:])
 print("B0 shift (ppm):", fit['B0_Shift'])
 print(fit['Contrasts'])
 cf.plot_fit(fit, title="Z-Spectrum Fit")
+
+# %% Step 6: GIF montage of offset images labeled with ppm
+from matplotlib.animation import FuncAnimation, PillowWriter
+
+gif_fn = f'offset_images_{scanner}.gif'
+fps = 4
+frames = [np.abs(img) for img in image_stack]
+
+# Fixed window across all offsets so contrast is comparable frame to frame
+vmin = 0
+vmax = np.percentile(np.stack(frames), 99.5)
+
+fig, ax = plt.subplots(figsize=(5, 5))
+im = ax.imshow(frames[0], cmap='gray', vmin=vmin, vmax=vmax)
+ax.axis('off')
+label = ax.text(0.03, 0.97, '', transform=ax.transAxes, color='yellow',
+                fontsize=14, fontweight='bold', va='top', ha='left',
+                bbox=dict(facecolor='black', alpha=0.5, edgecolor='none', pad=3))
+
+def _ppm_label(i):
+    txt = f'{offsets_ppm[i]:.2f} ppm'
+    return txt + ' (S0)' if i == 0 else txt  # index 0 is the reference image
+
+def _update(i):
+    im.set_data(frames[i])
+    label.set_text(_ppm_label(i))
+    return im, label
+
+anim = FuncAnimation(fig, _update, frames=len(frames), interval=1000 / fps, blit=True)
+anim.save(gif_fn, writer=PillowWriter(fps=fps), dpi=100)
+plt.close(fig)
+print(f'Saved {gif_fn} ({len(frames)} frames)')

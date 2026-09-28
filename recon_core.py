@@ -11,7 +11,7 @@ from utils import extract_raw
 # Recon variables
 # ========================================== #
 # Filenames
-DATA_FN = "/Volumes/JWW-BIC/continuous_spiral/7302027_1615/meas_MID00047_FID139555_spsp__2ppm.dat"
+DATA_FN = "/Volumes/JWW-BIC/continuous_spiral/7302027_1615/meas_MID00042_FID139550_gauss_ref.dat"
 SEQ_FN = "/Volumes/JWW-BIC/continuous_spiral/continuous_spiral_gauss_75p0_ppm.seq"
 
 # Plotting flags
