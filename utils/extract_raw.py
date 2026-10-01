@@ -61,7 +61,7 @@ def _detect_vendor(data_fn):
     raise ValueError(f"Unrecognized file type: {suffix}")
 
 def _extract_siemens(data_fn):
-    twix_data = twixtools.read_twix(data_fn, parse_pmu=True, parse_geometry=True)
+    twix_data = twixtools.read_twix(data_fn, parse_pmu=False, parse_geometry=True)
     meas = twix_data[-1]
     data_list = []
     timestamp_list = []
