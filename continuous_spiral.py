@@ -79,18 +79,23 @@ FLAG_DEPLOY = True # Also generate/run the pge2 deploy script?
 FLAG_SPSP = False # Use SPSP pulses?
 FLAG_GENERIC = True # If using SPSP pulses, use generic pulse?
 FLAG_SPSP_EXC = False # SPSP for excitation with lipid suppression?
-FLAG_SPSP_EXC_VERIFY = False # Bloch-sim check of the SPSP excitation (prints report; plots if FLAG_PLOT)
+FLAG_SPSP_EXC_VERIFY = True # Bloch-sim check of the SPSP excitation (prints report; plots if FLAG_PLOT)
 
 # Plotting and visualization flags 
-FLAG_SEQEYES = False
+FLAG_SEQEYES = True
 FLAG_PLOT = False # Also for plotting with GE
 
 # Other flags
 FLAG_TEST_REPORT = False
-# When FLAG_SPSP_EXC is False: pad the sinc excitation with delays on both
-# sides so its RF isocentre, TE (RF centre -> readout start), and total
-# excitation interval match the SPSP excitation. Isolates the effect of
-# lipid suppression. Ignored when FLAG_SPSP_EXC is True.
+# Excitation variants (FLAG_SPSP_EXC, FLAG_ADJUST_TE):
+#   (False, False) -> sinc (default)
+#   (True,  any  ) -> SPSP water excitation with lipid null
+#   (False, True ) -> profile-matched reference: ONE copy of the SPSP spatial
+#                     sub-pulse (same SLR design, plateau and gradient), so its
+#                     slice profile matches the SPSP's, padded with delays so
+#                     its RF isocentre, TE (RF centre -> readout start) and total
+#                     excitation interval match the SPSP. Isolates the effect of
+#                     lipid suppression from slice profile and timing.
 FLAG_ADJUST_TE = True
 
 # ==========================================
@@ -177,11 +182,11 @@ tp = 36e-3 # Saturation pulse duration [s]
 spoil_rise_time = 1e-3 # CEST spoiler gradient rise time [s]
 spoil_dur = 6.5e-3 # CEST spoiler gradient duration [s]
 spoil_amp = 0.8 * system.max_grad # CEST spoiler gradient amplitude
-offsets_ppm = [75.00, 2.00, -2.00]
-tissue_t1 = 3 # Assumed tissue/phantom T1 [s]; used for ZSPEC inter-offset recovery delay
+offsets_ppm = [75.00]
+tissue_t1 = 1.3 # Assumed tissue/phantom T1 [s]; used for ZSPEC inter-offset recovery delay
 
 # Readout parameters
-fov = 250e-3 # Field of view [m] (try 300 mm for patients, 200 mm for phantom)
+fov = 300e-3 # Field of view [m] (try 300 mm for patients, 200 mm for phantom)
 nx = 128 # Matrix size
 n_interleaves = 12 # Number of spiral interleaves (for "fully" sampled k-space minus VD)
 slice_thickness = 8e-3 # Slice thickness [m] (try 8 mm for patients, 10 mm for phantom)
@@ -246,8 +251,9 @@ gz_exc_ref_area = gz_exc.area
 
 # SPSP water excitation with an exact lipid null.
 # Designed with the EXC_* limits but on this system's rasters (GE 4/2 us).
-# Needed either to play it (FLAG_SPSP_EXC) or as the timing reference for
-# the TE-matched sinc (FLAG_ADJUST_TE).
+# Needed either to play it (FLAG_SPSP_EXC) or as the profile/timing reference
+# for the TE-matched sub-pulse (FLAG_ADJUST_TE).
+te_matched = FLAG_ADJUST_TE and not FLAG_SPSP_EXC
 if FLAG_SPSP_EXC or FLAG_ADJUST_TE:
     system_exc = copy.deepcopy(system)
     system_exc.max_grad = convert(from_value=EXC_MAX_GRAD, from_unit='mT/m', gamma=system.gamma)
@@ -276,21 +282,34 @@ if FLAG_SPSP_EXC:
     if FLAG_SPSP_EXC_VERIFY:
         spsp_exc.verify_spsp(rf_exc, gz_exc, spsp_exc_info,
                              dt=system.rf_raster_time, plot=FLAG_PLOT)
+elif te_matched:
+    # Replace the sinc with one copy of the SPSP spatial sub-pulse at the full
+    # flip angle, so the slice profile matches the SPSP's (no lipid null).
+    # Uses the design limits (system); the plateau gradient is the SPSP's.
+    rf_exc, gz_exc, gzr = spsp_exc.design_matched_subpulse(
+        system,
+        flip_angle = np.deg2rad(flip_angle),
+        slice_thickness = slice_thickness,
+        spsp_info = spsp_exc_info,
+        slice_offset = spsp_exc_slice_offset)
+    print(f"Matched sub-pulse: TBW {spsp_exc_info.tbw:.2f}, "
+          f"plateau {spsp_exc_info.t_flat*1e3:.3f} ms @ "
+          f"{gz_exc.amplitude/system.gamma*1e3:.2f} mT/m, "
+          f"peak B1 {np.max(np.abs(rf_exc.signal))/system.gamma*1e6:.2f} uT")
 gzr_duration = pp.calc_duration(gzr) if gzr is not None else 0.0
 
 # ========================================== #
-# TE matching of the sinc to the SPSP (FLAG_ADJUST_TE, sinc only)
-#   Pre-delay:  aligns the sinc RF isocentre with the SPSP isocentre
+# TE matching of the matched sub-pulse to the SPSP (FLAG_ADJUST_TE, non-SPSP only)
+#   Pre-delay:  aligns the sub-pulse RF isocentre with the SPSP isocentre
 #               (same sat -> excitation gap)
 #   Post-delay: aligns RF centre -> readout start (TE)
-#   Net: sinc excitation interval == SPSP block duration, so TR and n_trs
+#   Net: excitation interval == SPSP block duration, so TR and n_trs
 #        are identical between the two variants.
 # Both delays are folded into existing blocks (rf/gz delays, and a delay
 # object inside the gzr block) so block count / TRID segments are unchanged.
 # ========================================== #
 te_pre_delay = 0.0
 te_post_delay = 0.0
-te_matched = FLAG_ADJUST_TE and not FLAG_SPSP_EXC
 if te_matched:
     rt = system.grad_raster_time
     sinc_center = rf_exc.delay + pp.calc_rf_center(rf_exc)[0]
@@ -302,19 +321,19 @@ if te_matched:
     if te_pre_delay < 0 or te_post_delay < 0:
         raise ValueError(
             f"TE match needs non-negative padding (pre {te_pre_delay*1e3:.3f} ms, "
-            f"post {te_post_delay*1e3:.3f} ms); the SPSP is shorter than the sinc on one side.")
+            f"post {te_post_delay*1e3:.3f} ms); the SPSP is shorter than the sub-pulse on one side.")
 
-    # Shift the whole sinc (RF + slice select) later within its own block
+    # Shift the whole sub-pulse (RF + slice select) later within its own block
     rf_exc.delay = np.round((rf_exc.delay + te_pre_delay) / system.rf_raster_time) * system.rf_raster_time
     gz_exc.delay = np.round((gz_exc.delay + te_pre_delay) / rt) * rt
-    # Stretch the refocus block after the sinc
+    # Stretch the refocus block after the sub-pulse
     gzr_duration = np.round((gzr_duration + te_post_delay) / rt) * rt
 
     te_new = (pp.calc_duration(rf_exc, gz_exc)
               - (rf_exc.delay + pp.calc_rf_center(rf_exc)[0]) + gzr_duration)
     exc_total = pp.calc_duration(rf_exc, gz_exc) + gzr_duration
     print(f"TE match: pre {te_pre_delay*1e3:.3f} ms, post {te_post_delay*1e3:.3f} ms | "
-          f"TE sinc {te_new*1e3:.3f} ms vs SPSP {spsp_te*1e3:.3f} ms "
+          f"TE sub-pulse {te_new*1e3:.3f} ms vs SPSP {spsp_te*1e3:.3f} ms "
           f"(residual {(te_new - spsp_te)*1e6:.1f} us) | "
           f"exc interval {exc_total*1e3:.3f} ms vs SPSP {spsp_exc_info.block_duration*1e3:.3f} ms")
 
@@ -619,7 +638,15 @@ def convert_and_queue_for_ge(seq_filename, description):
 
 def set_exc_definitions(seq_scan):
     """Record the excitation type (and SPSP design / TE matching) in the .seq definitions."""
-    seq_scan.set_definition('ExcPulse', 'spsp_fatnull' if FLAG_SPSP_EXC else 'sinc')
+    if FLAG_SPSP_EXC:
+        exc_pulse = 'spsp_fatnull'
+    elif te_matched:
+        exc_pulse = 'slr_subpulse'
+    else:
+        exc_pulse = 'sinc'
+    seq_scan.set_definition('ExcPulse', exc_pulse)
+    if te_matched:
+        seq_scan.set_definition('ExcTBW', float(spsp_exc_tbw))
     if FLAG_SPSP_EXC:
         seq_scan.set_definition('ExcRFCenter', float(spsp_exc_info.rf_center))
         seq_scan.set_definition('ExcSubPulsePeriod', float(spsp_exc_info.T_s))
@@ -698,7 +725,7 @@ scanner = '' if not FLAG_GE else '_ge'
 if FLAG_SPSP_EXC:
     exc_tag = '_spspexc'
 elif te_matched:
-    exc_tag = '_sinc_tematch'
+    exc_tag = '_slr_tematch'
 else:
     exc_tag = ''
 
@@ -717,7 +744,7 @@ if not FLAG_ZSPEC:
         # ========================================== #
         convert_and_queue_for_ge(seq_filename, f"{offset_ppm} ppm")
 
-elif FLAG_GE:
+elif True:
     # ========================================== #
     # ZSPEC on GE: ignore offsets_ppm entirely. Write ONE standalone
     # sequence PER zspec_offsets_ppm entry (same structure as the regular

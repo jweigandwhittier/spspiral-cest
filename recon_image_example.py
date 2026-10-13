@@ -10,13 +10,13 @@ from utils import extract_raw
 #%% Step 1: Reconstruct image
 from utils import recon
 
-data_fn = 'data/raw/ge/Exam797/Series37/ScanArchive_UCB3TMR_20260916_174227694.h5'
-seq_fn = 'sequences/ge/continuous_spiral_gauss_75p0_ppm_ge.seq'
+data_fn = '/Volumes/JWW-BIC/lipids/test_te/meas_MID00068_FID54555_pulseq_v1p5.dat'
+seq_fn = '/Volumes/JWW-BIC/lipids/test_te/continuous_spiral_gauss_75p0_ppm.seq'
 
 _, ksp, _, vendor = extract_raw.extract_kspace(data_fn)
 
 seq = extract_raw.load_seq(seq_fn)
-k_traj_adc, _, _, _, t_adc = seq.calculate_kspace(trajectory_delay=0)
+k_traj_adc, _, _, _, t_adc = seq.calculate_kspace(trajectory_delay=10e-6)
 
 # Get nominal matrix size
 nx = seq.definitions['Nx']
@@ -27,7 +27,7 @@ n_trs = int(seq.definitions['N_TRs'])
 n_adc = int(seq.definitions['MaxAdcSegmentLength'])
 n_extra = 1 if vendor == 'ge' else 0  
 pislquant = int(seq.definitions.get('pislquant', 0))
-n_burnin = 40
+n_burnin = 0
 
 main_start = n_extra + pislquant
 ksp_main = ksp[:, main_start : main_start + n_trs, :]
@@ -47,3 +47,4 @@ import matplotlib.pyplot as plt
 fig, ax = plt.subplots()
 ax.imshow(image, cmap='gray')
 ax.axis('off')
+

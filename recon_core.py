@@ -11,8 +11,8 @@ from utils import extract_raw
 # Recon variables
 # ========================================== #
 # Filenames
-DATA_FN = "/Volumes/JWW-BIC/continuous_spiral/7302027_1615/meas_MID00042_FID139550_gauss_ref.dat"
-SEQ_FN = "/Volumes/JWW-BIC/continuous_spiral/continuous_spiral_gauss_75p0_ppm.seq"
+DATA_FN = "/Volumes/JWW-BIC/lipids/data/meas_MID00165_FID178568_2ppm_spsp.dat"
+SEQ_FN = "/Volumes/JWW-BIC/lipids/data/continuous_spiral_gauss_75p0_ppm_spspexc.seq"
 
 # Plotting flags
 PLOT_BURNIN_FIT = True
@@ -33,11 +33,14 @@ SMAP_KCUTOFF_FRAC = 0.25 # Fraction of kmax used for the low-res calibration reg
 
 # Gradient delays per PHYSICAL axis from GIRF measurement
 # Convention: G_actual(t) = G_nominal(t - tau).
-tau_phys = {'X': 2.01e-6, 'Y': 4.55e-6, 'Z': 7.03e-6}  # seconds; UCSF China Basin MR8
+# tau_phys = {'X': 2.01e-6, 'Y': 4.55e-6, 'Z': 7.03e-6}  # seconds; UCSF China Basin MR8
+tau_phys = {'X': 0, 'Y': 0, 'Z': 0}
 
 #%% Step 1: Extract raw data and sequence parameters 
+import numpy as np
 # Extract k-space per vendor
 meas, ksp, timestamps, vendor = extract_raw.extract_kspace(DATA_FN)
+ksp = np.transpose(ksp, (1, 2, 0))  # [samples, readouts, coils] -> [readouts, coils, samples]
 n_total_acq, n_coils, n_samples = ksp.shape
 
 # Extract sequence (parameters + trajectory)

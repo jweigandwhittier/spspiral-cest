@@ -18,6 +18,7 @@ Design summary
 Public API
 ----------
 design_spsp_exc(system, flip_angle, slice_thickness, ...) -> (rf, gz, info)
+design_matched_subpulse(system, flip_angle, slice_thickness, info) -> (rf, gz, gzr)
 bloch_sim(rf, gz, z, df, ...)                            -> Mxy
 verify_spsp(rf, gz, info, ...)                           -> metrics dict
 
@@ -288,6 +289,51 @@ def design_spsp_exc(system, flip_angle, slice_thickness, tbw=2.0, n_sub=7,
         pb_hw=pb_hw, sb_hw=sb_hw,
     )
     return rf, gz, info
+
+
+# ----------------------------------------------------------------------------
+# Profile-matched single sub-pulse (non-SPSP reference excitation)
+# ----------------------------------------------------------------------------
+def design_matched_subpulse(system, flip_angle, slice_thickness, spsp_info,
+                            slice_offset=0.0, d1=0.01, d2=0.01):
+    """ONE copy of the SPSP spatial sub-pulse, at the full flip angle.
+
+    Same dzrf design (tbw, d1, d2), same plateau duration and gradient
+    amplitude as the SPSP lobes, so in the small-tip regime its slice profile
+    is identical to the SPSP's water profile -- but with no spectral selectivity.
+    Use as the non-lipid-suppressed reference to isolate the effect of the
+    lipid null from the slice-profile shape.
+
+    RF is played on the plateau only (as in the SPSP). Slice offset is applied
+    as RF phase modulation about the RF centre (constant gradient under RF).
+
+    Returns rf, gz, gzr in the same form as pp.make_sinc_pulse(return_gz=True):
+    gz is the slice-select trapezoid, gzr the slice refocus trapezoid.
+    """
+    dt = system.grad_raster_time
+    dt_rf = system.rf_raster_time
+    t_flat = spsp_info.t_flat
+    tbw = spsp_info.tbw
+
+    fwhm_tbw = _profile_fwhm(tbw, d1, d2)
+    A_flat = fwhm_tbw / slice_thickness                     # 1/m, same as SPSP lobe
+    gz = pp.make_trapezoid('z', flat_area=A_flat, flat_time=t_flat, system=system)
+
+    n_pts = int(round(t_flat / dt_rf))
+    p = np.real(sprf.dzrf(n=n_pts, tb=tbw, ptype='st', ftype='ls', d1=d1, d2=d2))
+    signal = p.astype(complex)
+    if slice_offset != 0.0:
+        t_rel = (np.arange(n_pts) + 0.5) * dt_rf - t_flat / 2   # about RF centre
+        signal *= np.exp(1j * 2 * np.pi * gz.amplitude * slice_offset * t_rel)
+
+    # RF must start >= rf_dead_time after block start
+    gz.delay = _ceil_to(max(0.0, system.rf_dead_time - gz.rise_time), dt)
+    rf = pp.make_arbitrary_rf(signal, flip_angle, system=system,
+                              delay=gz.delay + gz.rise_time, use='excitation')
+
+    # Refocus: -(area from RF centre to end of slice select) = -gz.area/2
+    gzr = pp.make_trapezoid('z', area=-gz.area / 2, system=system)
+    return rf, gz, gzr
 
 
 # ----------------------------------------------------------------------------

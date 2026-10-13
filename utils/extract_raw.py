@@ -71,13 +71,15 @@ def _extract_siemens(data_fn):
     n_skipped = {}
     for mdb in meas['mdb']:
         if mdb.is_image_scan():
-            data_list.append(mdb.data)
+            data_list.append(mdb.data)      # each mdb.data is [coils, samples]
             timestamp_list.append(mdb.mdh.TimeStamp)
         else:
             matched = [f for f in skip_flags if mdb.is_flag_set(f)]
             key = ','.join(matched) if matched else 'other'
             n_skipped[key] = n_skipped.get(key, 0) + 1
-    ksp = np.asarray(data_list)             
+    # Stacked as [readouts, coils, samples]; reorder to [samples, readouts, coils]
+    # so Siemens matches the GE layout expected by the recon.
+    ksp = np.asarray(data_list).transpose(2, 0, 1)
     timestamps = np.asarray(timestamp_list, dtype=float) * 2.5e-3 
     return meas, ksp, timestamps
 
@@ -115,6 +117,7 @@ def _extract_ge(data_fn):
     return ksp
     
 def extract_kspace(data_fn):
+    """Returns (meas, ksp, timestamps, vendor) with ksp as [samples, readouts, coils] for both vendors."""
     vendor = _detect_vendor(data_fn)
     if vendor == 'siemens':
         meas, ksp, timestamps = _extract_siemens(data_fn)
@@ -122,6 +125,3 @@ def extract_kspace(data_fn):
     elif vendor == 'ge':
         ksp = _extract_ge(data_fn)
         return None, ksp, None, vendor # TODO: Look into extracting physio data from GE
-
-    
-    
