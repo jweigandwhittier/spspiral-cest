@@ -26,7 +26,7 @@ DESIGN_MAX_GRAD = 30   # mT/m
 DESIGN_MAX_SLEW = 78   # mT/m/ms
 
 # Limits used ONLY for the SPSP excitation design (FLAG_SPSP_EXC / FLAG_ADJUST_TE)
-EXC_MAX_GRAD = 80   # mT/m
+EXC_MAX_GRAD = 33   # mT/m
 EXC_MAX_SLEW = 130  # mT/m/ms
 
 # Siemens 3T
@@ -69,17 +69,18 @@ FLAG_SIM = False # Also write a sequence for simulation with BMCTool?
 # loop below is skipped entirely). On Siemens this is ONE combined
 # sequence sweeping zspec_offsets_ppm with a recovery delay dropped
 # between offsets. On GE this is a SEPARATE .seq file per zspec_offsets_ppm.
-FLAG_ZSPEC = False
+FLAG_ZSPEC = True
 
 # Site selection - drives conversion wait params + deployment locations, see prep_pge2.py
-SITE = "ucsf" # "site1" or "site2", edit this for your own sites (see prep_pge2_example.py)
+SITE = "berkeley" # "site1" or "site2", edit this for your own sites (see prep_pge2_example.py)
 FLAG_DEPLOY = True # Also generate/run the pge2 deploy script?
 
 # SPSP pulse flags
-FLAG_SPSP = False # Use SPSP pulses?
+FLAG_SPSP = True # Use SPSP pulses?
 FLAG_GENERIC = True # If using SPSP pulses, use generic pulse?
-FLAG_SPSP_EXC = False # SPSP for excitation with lipid suppression?
-FLAG_SPSP_EXC_VERIFY = True # Bloch-sim check of the SPSP excitation (prints report; plots if FLAG_PLOT)
+FLAG_SPSP_EXC = True # SPSP for excitation with lipid suppression?
+FLAG_SPSP_EXC_VERIFY = True # Bloch-sim check of the SPSP excitation (prints report)
+FLAG_SPSP_EXC_VERIFY_PLOT = True # Also show the verification plot (independent of FLAG_PLOT)
 
 # Plotting and visualization flags 
 FLAG_SEQEYES = True
@@ -96,7 +97,7 @@ FLAG_TEST_REPORT = False
 #                     its RF isocentre, TE (RF centre -> readout start) and total
 #                     excitation interval match the SPSP. Isolates the effect of
 #                     lipid suppression from slice profile and timing.
-FLAG_ADJUST_TE = True
+FLAG_ADJUST_TE = False
 
 # ==========================================
 # Run PyPulseq version check
@@ -177,13 +178,13 @@ seq_dur = 12 # Total desired duration of the sequence [s]
 flip_angle = 12 # [deg]; (12deg based on sim for T1 = 1.3 s, using 16.5deg at CBL)
 
 # CEST parameters
-b1p = 2.00 # Saturation pulse peak B1 amplitude [uT]
+b1p = 1.20 # Saturation pulse peak B1 amplitude [uT]
 tp = 36e-3 # Saturation pulse duration [s]
 spoil_rise_time = 1e-3 # CEST spoiler gradient rise time [s]
 spoil_dur = 6.5e-3 # CEST spoiler gradient duration [s]
 spoil_amp = 0.8 * system.max_grad # CEST spoiler gradient amplitude
-offsets_ppm = [75.00]
-tissue_t1 = 1.3 # Assumed tissue/phantom T1 [s]; used for ZSPEC inter-offset recovery delay
+offsets_ppm = [75.00, 2.00, -2.00]
+tissue_t1 = 2.4 # Assumed tissue/phantom T1 [s]; used for ZSPEC inter-offset recovery delay
 
 # Readout parameters
 fov = 300e-3 # Field of view [m] (try 300 mm for patients, 200 mm for phantom)
@@ -194,11 +195,13 @@ adc_dwell = 10e-6 # Hardcode this to preserve readout bandwidth (BWPP --> SNR)
 rf_spoiling_inc = 117 # [deg]
 
 # SPSP excitation parameters (used if FLAG_SPSP_EXC, or as TE reference if FLAG_ADJUST_TE)
-spsp_exc_tbw = 2.0 # Spatial sub-pulse time-bandwidth product (plateau-only RF)
-spsp_exc_n_sub = 7 # Number of sub-pulses (odd)
+spsp_exc_mode = 'slr' # 'binomial' (LS/SLR envelope, plateau-only RF) or 'binomial' (1-2-1, VERSE, ~3.4 ms)
+# None -> mode default (see spsp_exc._MODE_DEFAULTS). Explicit values override the mode.
+spsp_exc_tbw = None # Spatial sub-pulse TBW (slr 2.0, binomial 3.5)
+spsp_exc_n_sub = None # Number of sub-pulses (slr 7, binomial 3)
 spsp_exc_fat_ppm = -3.4 # Lipid resonance to null, relative to water [ppm]
-spsp_exc_pb_hw = 100.0 # Water passband half-width [Hz]
-spsp_exc_sb_hw = 100.0 # Stopband half-width around the lipid null [Hz]
+spsp_exc_pb_hw = None # Water passband half-width [Hz] (slr 100; binomial 50, verify report only)
+spsp_exc_sb_hw = None # Stopband half-width around the lipid null [Hz] (slr 100; binomial 50, report only)
 spsp_exc_slice_offset = 0.0 # Slice offset [m]; applied as RF phase modulation, NOT freq_offset
 
 # GE specific parameters
@@ -211,8 +214,8 @@ freq = gamma_hz * system.B0
 # ========================================== #
 # Load maps for tailored SPSP pulses
 # ========================================== #
-b1_map = np.load('generic_spsp/generic_b1.npy') # Or paste DICOM file path directly
-wasabi_seq_filename = 'generic_spsp/generic_b1.seq' # Put 'dicom' here if the map is from a DICOM
+b1_map = '/Volumes/JWW-BIC/Phantom_Zspec/SPSP/Phan_Tom_19810101/study/tfl_b1map/IM-0001-0001.dcm' # Or paste DICOM file path directly
+wasabi_seq_filename = 'dicom' # Put 'dicom' here if the map is from a DICOM
 mask = None # Keep this
 if FLAG_GENERIC: # Don't touch this
     b1_map = np.load('generic_spsp/generic_b1.npy')
@@ -262,13 +265,14 @@ if FLAG_SPSP_EXC or FLAG_ADJUST_TE:
         system_exc,
         flip_angle = np.deg2rad(flip_angle),
         slice_thickness = slice_thickness,
-        tbw = spsp_exc_tbw,
-        n_sub = spsp_exc_n_sub,
+        tbw = None,
+        n_sub = None,
         fat_ppm = spsp_exc_fat_ppm,
-        pb_hw = spsp_exc_pb_hw,
-        sb_hw = spsp_exc_sb_hw,
-        slice_offset = spsp_exc_slice_offset)
-    print(f"SPSP excitation: T_s {spsp_exc_info.T_s*1e3:.3f} ms, "
+        pb_hw = None,
+        sb_hw = None,
+        slice_offset = spsp_exc_slice_offset,
+        mode = spsp_exc_mode)
+    print(f"SPSP excitation ({spsp_exc_info.mode}, {spsp_exc_info.n_sub} sub-pulses, TBW {spsp_exc_info.tbw:.1f}): T_s {spsp_exc_info.T_s*1e3:.3f} ms, "
           f"lipid null at {spsp_exc_info.f_fat:.1f} Hz, "
           f"block {spsp_exc_info.block_duration*1e3:.2f} ms, "
           f"RF centre {spsp_exc_info.rf_center*1e3:.3f} ms from block start, "
@@ -281,19 +285,24 @@ if FLAG_SPSP_EXC:
     gzr = None
     if FLAG_SPSP_EXC_VERIFY:
         spsp_exc.verify_spsp(rf_exc, gz_exc, spsp_exc_info,
-                             dt=system.rf_raster_time, plot=FLAG_PLOT)
+                             dt=system.rf_raster_time, plot=FLAG_SPSP_EXC_VERIFY_PLOT)
+        if FLAG_SPSP_EXC_VERIFY_PLOT:
+            import matplotlib.pyplot as plt
+            plt.show()  # verify_spsp builds the figure but never shows it
 elif te_matched:
     # Replace the sinc with one copy of the SPSP spatial sub-pulse at the full
     # flip angle, so the slice profile matches the SPSP's (no lipid null).
-    # Uses the design limits (system); the plateau gradient is the SPSP's.
+    # Plateau-only dzrf sub-pulse with the same TBW and area as the SPSP lobe
+    # (no VERSE needed for a single pulse), built with the design limits.
+    # slr: plateau = SPSP plateau; binomial: plateau = SPSP lobe duration.
     rf_exc, gz_exc, gzr = spsp_exc.design_matched_subpulse(
         system,
         flip_angle = np.deg2rad(flip_angle),
         slice_thickness = slice_thickness,
         spsp_info = spsp_exc_info,
         slice_offset = spsp_exc_slice_offset)
-    print(f"Matched sub-pulse: TBW {spsp_exc_info.tbw:.2f}, "
-          f"plateau {spsp_exc_info.t_flat*1e3:.3f} ms @ "
+    print(f"Matched sub-pulse ({spsp_exc_info.mode}): TBW {spsp_exc_info.tbw:.2f}, "
+          f"plateau {gz_exc.flat_time*1e3:.3f} ms @ "
           f"{gz_exc.amplitude/system.gamma*1e3:.2f} mT/m, "
           f"peak B1 {np.max(np.abs(rf_exc.signal))/system.gamma*1e6:.2f} uT")
 gzr_duration = pp.calc_duration(gzr) if gzr is not None else 0.0
@@ -388,6 +397,25 @@ gx_rew_ref, *_ = pp.make_extended_trapezoid_area(
 gy_rew_ref, *_ = pp.make_extended_trapezoid_area(
     area=-gy_ro_ref.area, channel='y', grad_start=gy_ro_ref.last, grad_end=0, system=system_rotation_design)
 
+# ========================================== #
+# Echo time: RF isocentre -> k-space centre
+# The spiral is centre-out, so k = 0 where the readout gradient starts, i.e.
+# gx_ro_ref.delay (= adc.delay) into the readout block. Block durations are
+# rounded up to the block raster, as they are in the written sequence.
+# ========================================== #
+_block_raster = system.block_duration_raster
+_round_block = lambda t: np.ceil(np.round(t / _block_raster, 6)) * _block_raster
+exc_block_duration = _round_block(pp.calc_duration(rf_exc, gz_exc))
+if FLAG_SPSP_EXC:
+    exc_rf_center = spsp_exc_info.rf_center                  # designed isocentre, from block start
+else:
+    exc_rf_center = rf_exc.delay + pp.calc_rf_center(rf_exc)[0]
+refocus_block_duration = _round_block(gzr_duration) if gzr is not None else 0.0
+te = exc_block_duration - exc_rf_center + refocus_block_duration + gx_ro_ref.delay
+print(f"TE (RF centre -> k-space centre): {te * 1e3:.3f} ms "
+      f"[excitation block {exc_block_duration * 1e3:.3f} ms, RF centre at {exc_rf_center * 1e3:.3f} ms, "
+      f"refocus {refocus_block_duration * 1e3:.3f} ms, readout gradient delay {gx_ro_ref.delay * 1e6:.0f} us]")
+
 # Write spoiler
 n_cycles = 4
 spoil_area = n_cycles / slice_thickness - gz_exc_ref_area / 2
@@ -436,7 +464,12 @@ gx_spoil_cest, gy_spoil_cest, gz_spoil_cest = [
 # Calculate number of TRs
 # ========================================== #
 # CEST prep
-prep_duration = pp.calc_duration(sat_pulse) + pp.calc_duration(gx_spoil_cest, gy_spoil_cest, gz_spoil_cest)
+# SPSP saturation block: tailored -> RF + x/y gradients; generic -> RF only (no gradients)
+if FLAG_SPSP:
+    sat_block = (spsp_pulse,) if FLAG_GENERIC else (spsp_pulse, spsp_grad_x, spsp_grad_y)
+else:
+    sat_block = (sat_pulse,)
+prep_duration = pp.calc_duration(*sat_block) + pp.calc_duration(gx_spoil_cest, gy_spoil_cest, gz_spoil_cest)
 print(f"CEST Prep Duration: {prep_duration * 1000:.2f} ms")
 # Excitation (includes TE-matching padding, if any)
 exc_duration = pp.calc_duration(rf_exc, gz_exc) + gzr_duration
@@ -452,6 +485,7 @@ tr = prep_duration + exc_duration + readout_duration + max_rewinder_duration
 tr = align_to_raster(tr)
 n_trs = int(np.floor(seq_dur / tr))
 print(f"Total TR: {tr * 1000:.2f} ms")
+print(f"TE: {te * 1000:.3f} ms")
 print(f"Number of TRs: {n_trs}")
 golden_angle = np.pi * (3 - np.sqrt(5))
 angles = np.mod(np.arange(n_trs) * golden_angle, 2 * np.pi)
@@ -545,10 +579,7 @@ def write_offset_tr_train(seqs, seq_scan, offset_ppm, pislquant):
 
         for seq in seqs:
             # Sat pulse + CEST spoiler
-            if FLAG_SPSP:
-                seq.add_block(spsp_pulse, prep_label)
-            else:
-                seq.add_block(sat_pulse, prep_label)
+            seq.add_block(*sat_block, prep_label)
             seq.add_block(gx_spoil_cest, gy_spoil_cest, gz_spoil_cest)
 
             # Excitation
@@ -595,9 +626,13 @@ def convert_and_queue_for_ge(seq_filename, description):
     if not FLAG_GE:
         return
 
+    # SPSP is designed to the EXC_* limits; everything else to DESIGN_*
+    check_grad = system_exc.max_grad if FLAG_SPSP_EXC else system.max_grad
+    check_slew = system_exc.max_slew if FLAG_SPSP_EXC else system.max_slew
+
     system_dict = {
-        "maxGrad": float(system.max_grad),
-        "maxSlew": float(system.max_slew),
+        "maxGrad": float(check_grad),
+        "maxSlew": float(check_slew),
         "gamma": float(system.gamma),
 
         # Timing
@@ -645,13 +680,15 @@ def set_exc_definitions(seq_scan):
     else:
         exc_pulse = 'sinc'
     seq_scan.set_definition('ExcPulse', exc_pulse)
+    if FLAG_SPSP_EXC or te_matched:
+        seq_scan.set_definition('ExcMode', spsp_exc_info.mode)
     if te_matched:
-        seq_scan.set_definition('ExcTBW', float(spsp_exc_tbw))
+        seq_scan.set_definition('ExcTBW', float(spsp_exc_info.tbw))
     if FLAG_SPSP_EXC:
         seq_scan.set_definition('ExcRFCenter', float(spsp_exc_info.rf_center))
         seq_scan.set_definition('ExcSubPulsePeriod', float(spsp_exc_info.T_s))
-        seq_scan.set_definition('ExcNSub', int(spsp_exc_n_sub))
-        seq_scan.set_definition('ExcTBW', float(spsp_exc_tbw))
+        seq_scan.set_definition('ExcNSub', int(spsp_exc_info.n_sub))
+        seq_scan.set_definition('ExcTBW', float(spsp_exc_info.tbw))
         seq_scan.set_definition('ExcFatNull_Hz', float(spsp_exc_info.f_fat))
     seq_scan.set_definition('ExcTEMatched', int(te_matched))
     if te_matched:
@@ -693,6 +730,7 @@ def build_and_save_single_offset_seq(seq_name, offset_ppm):
     seq_scan.set_definition('Offset_ppm', float(offset_ppm))
     seq_scan.set_definition('N_TRs', n_trs)
     seq_scan.set_definition('TR', tr)
+    seq_scan.set_definition('TE', float(te))     # RF isocentre -> k-space centre (spiral start) [s]
     seq_scan.set_definition('Nx', nx)
     seq_scan.set_definition('FlipAngle', flip_angle)
     set_exc_definitions(seq_scan)
@@ -722,10 +760,11 @@ def build_and_save_single_offset_seq(seq_name, offset_ppm):
 
 pulse_type = 'gauss' if not FLAG_SPSP else 'spsp'
 scanner = '' if not FLAG_GE else '_ge'
+_binom = '_binom' if (FLAG_SPSP_EXC or te_matched) and spsp_exc_info.mode == 'binomial' else ''
 if FLAG_SPSP_EXC:
-    exc_tag = '_spspexc'
+    exc_tag = f'_spspexc{_binom}'
 elif te_matched:
-    exc_tag = '_slr_tematch'
+    exc_tag = '_slr_tematch' if not _binom else '_binom_tematch'
 else:
     exc_tag = ''
 
@@ -744,7 +783,7 @@ if not FLAG_ZSPEC:
         # ========================================== #
         convert_and_queue_for_ge(seq_filename, f"{offset_ppm} ppm")
 
-elif True:
+elif FLAG_GE:
     # ========================================== #
     # ZSPEC on GE: ignore offsets_ppm entirely. Write ONE standalone
     # sequence PER zspec_offsets_ppm entry (same structure as the regular
@@ -797,6 +836,7 @@ else:
     seq_scan.set_definition('Offsets_ppm', [float(o) for o in zspec_offsets_ppm])
     seq_scan.set_definition('N_TRs_per_offset', n_trs)
     seq_scan.set_definition('TR', tr)
+    seq_scan.set_definition('TE', float(te))     # RF isocentre -> k-space centre (spiral start) [s]
     seq_scan.set_definition('Nx', nx)
     seq_scan.set_definition('FlipAngle', flip_angle)
     set_exc_definitions(seq_scan)

@@ -11,8 +11,8 @@ from utils import extract_raw
 # Recon variables
 # ========================================== #
 # Filenames
-DATA_FN = "/Volumes/JWW-BIC/lipids/data/meas_MID00165_FID178568_2ppm_spsp.dat"
-SEQ_FN = "/Volumes/JWW-BIC/lipids/data/continuous_spiral_gauss_75p0_ppm_spspexc.seq"
+DATA_FN = "/Volumes/JWW-BIC/Mark/meas_MID00220_FID55603_tematch_neg2.dat"
+SEQ_FN = "/Volumes/JWW-BIC/Mark/continuous_spiral_gauss_75p0_ppm_spspexc_binom.seq"
 
 # Plotting flags
 PLOT_BURNIN_FIT = True
@@ -27,6 +27,17 @@ K_NAV = 8 # Readout samples for retrospective gating (from spiral center)
 N_HARM = 6 # Fourier harmonics for golden-angle-lock removal
 N_BURNIN_FALLBACK = 40  # Used only if the automatic exponential fit below fails
 burnin_tol = 0.02 # Fit settles to within this fractional amplitude of asymptote before being called "steady state"
+
+# Heart-rate prior (for scans without PULS, or subjects outside CARD_BAND)
+# If EXPECTED_HR_BPM is set, CARD_BAND is replaced by EXPECTED_HR_BPM +/- HR_TOL_BPM for
+# PC scoring, the autocorrelation search and the bandpass centre, and a PC whose detected
+# triggers give an HR outside that window is rejected in favour of the next-best PC.
+# Set EXPECTED_HR_BPM = None for the original behaviour.
+EXPECTED_HR_BPM = 70 # [bpm], subject's approximate resting HR (None = no prior)
+HR_TOL_BPM = 10 # [bpm], accepted window around EXPECTED_HR_BPM
+PC_OVERRIDE = None # Force a PC (1-based, as printed), e.g. 3; None = automatic
+BANDPASS_HW_HZ = None # Cardiac bandpass half-width [Hz]; None = 0.4 x f_card
+                      # (the old fixed 0.5 Hz reaches into respiration below ~60 bpm)
 
 # For coil maps 
 SMAP_KCUTOFF_FRAC = 0.25 # Fraction of kmax used for the low-res calibration region
@@ -116,74 +127,118 @@ print(f"variance explained by first 5 PCs: {(S[:5]**2 / np.sum(S**2))}")
 from scipy.signal import welch
 from scipy.stats import rankdata
 
+trapz = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+
+if EXPECTED_HR_BPM is not None:
+    card_band = ((EXPECTED_HR_BPM - HR_TOL_BPM) / 60, (EXPECTED_HR_BPM + HR_TOL_BPM) / 60)
+    lag_lo = max(3, int(np.floor(fs / card_band[1])))  # shortest expected period [TRs]
+    lag_hi = int(np.ceil(fs / card_band[0]))           # longest expected period [TRs]
+    print(f"HR prior: {EXPECTED_HR_BPM} +/- {HR_TOL_BPM} bpm -> band "
+          f"{card_band[0]:.2f}-{card_band[1]:.2f} Hz, autocorr lags {lag_lo}-{lag_hi} TRs")
+else:
+    card_band = CARD_BAND
+    lag_lo, lag_hi = 3, int(fs * 3)
+
 n_pc_check = min(8, pcs.shape[1])
-card_frac_arr, ac_peak_arr, ac_lag_arr = (np.zeros(n_pc_check) for _ in range(3))
+card_frac_arr, ac_peak_arr, ac_lag_arr, peak_ratio_arr, f_psd_pk_arr = (np.zeros(n_pc_check) for _ in range(5))
 for i in range(n_pc_check):
     x = pcs[:, i]
-    f, Pxx = welch(x, fs=fs, nperseg=min(128, len(x)))
-    total_power = np.trapz(Pxx, f)
-    band_mask = (f >= CARD_BAND[0]) & (f <= CARD_BAND[1])
-    card_frac_arr[i] = np.trapz(Pxx[band_mask], f[band_mask]) / total_power
+    f, Pxx = welch(x, fs=fs, nperseg=min(256 if EXPECTED_HR_BPM else 128, len(x)))
+    band_mask = (f >= card_band[0]) & (f <= card_band[1])
+    broad_mask = (f >= 0.05) & (f <= min(3.5, fs / 2))
+    card_frac_arr[i] = trapz(Pxx[band_mask], f[band_mask]) / trapz(Pxx, f)
+    peak_ratio_arr[i] = Pxx[band_mask].max() / Pxx[broad_mask].max()  # 1 = dominant peak is in the band
+    f_psd_pk_arr[i] = f[band_mask][np.argmax(Pxx[band_mask])]
     ac = np.correlate(x - x.mean(), x - x.mean(), mode='full')
     ac = ac[len(ac)//2:] / ac[len(ac)//2]
-    search = ac[3:min(len(ac), int(fs * 3))]
+    search = ac[lag_lo:min(len(ac), lag_hi + 1)]
     ac_peak_arr[i] = np.max(search)
-    ac_lag_arr[i] = 3 + np.argmax(search)   # lag in TRs -> a within-PC period estimate
+    ac_lag_arr[i] = lag_lo + np.argmax(search)   # lag in TRs -> a within-PC period estimate
 
+ranks = [rankdata(card_frac_arr), rankdata(ac_peak_arr)]
+if EXPECTED_HR_BPM is not None:
+    ranks.append(rankdata(peak_ratio_arr))
 if HAVE_PULS:
     puls_corr_arr = np.array([np.corrcoef(detrend(pcs[:, i]), detrend(puls_at_acq))[0, 1]
                                for i in range(n_pc_check)])
-    composite = (rankdata(card_frac_arr) + rankdata(ac_peak_arr) + rankdata(np.abs(puls_corr_arr))) / 3
+    ranks.append(rankdata(np.abs(puls_corr_arr)))
 else:
     puls_corr_arr = np.full(n_pc_check, np.nan)
-    composite = (rankdata(card_frac_arr) + rankdata(ac_peak_arr)) / 2
+composite = np.mean(ranks, axis=0)
+ranked_pcs = [int(i) for i in np.argsort(-composite)]
 
-best_pc = int(np.argmax(composite))
+for i in range(n_pc_check):
+    print(f"  PC{i+1}: band power {card_frac_arr[i]:.2f}, peak-in-band {peak_ratio_arr[i]:.2f}, "
+          f"autocorr {ac_peak_arr[i]:.2f} @ {60*fs/ac_lag_arr[i]:.0f} bpm, score {composite[i]:.2f}")
 
 # %% Step 5: Extract cardiac phase / self-gate triggers from the selected PC
 from scipy.signal import butter, filtfilt, find_peaks, hilbert
 
-x = pcs[:, best_pc]
+# At most one trigger per 0.7 x shortest expected period (no double-counted beats)
+min_distance = int(0.7 * fs / card_band[1]) if EXPECTED_HR_BPM is not None else int(0.5 * fs)
 
-if HAVE_PULS:
-    f_card = 1.0 / np.median(puls_period)
+def hr_ok(hr):
+    return EXPECTED_HR_BPM is None or (np.isfinite(hr) and abs(hr - EXPECTED_HR_BPM) <= HR_TOL_BPM)
+
+def gate_with_pc(i, verbose=False):
+    """Bandpass PC i around f_card, return (x_filt, phase, peak_idx, f_card, IHR median)."""
+    x = pcs[:, i]
+    if HAVE_PULS:
+        f_card = 1.0 / np.median(puls_period)
+    else:
+        f_card_psd = f_psd_pk_arr[i]
+        f_card_ac = fs / ac_lag_arr[i]
+        f_card = 0.5 * (f_card_psd + f_card_ac)
+        if verbose:
+            print(f"self-gated f_card estimates: PSD-peak={f_card_psd:.3f} Hz "
+                  f"({60*f_card_psd:.0f} bpm), autocorr-lag={f_card_ac:.3f} Hz "
+                  f"({60*f_card_ac:.0f} bpm); using f_card={f_card:.3f} Hz ({60*f_card:.0f} bpm)")
+
+    def filt(fc):
+        bw = BANDPASS_HW_HZ if BANDPASS_HW_HZ is not None else 0.4 * fc
+        b, a = butter(4, [max(fc - bw, 0.1), fc + bw], btype='band', fs=fs)
+        xf = filtfilt(b, a, x - x.mean())
+        pk, _ = find_peaks(xf, distance=max(1, min_distance))
+        return xf, np.angle(hilbert(xf)), pk
+
+    x_filt, phase, peak_idx = filt(f_card)
+    ihr = np.diff(timestamps[peak_idx])
+    f_ref = 1.0 / np.median(ihr) if len(ihr) else f_card
+    # Refine the bandpass centre from the detected triggers, but never outside the HR window
+    if not HAVE_PULS and abs(f_ref - f_card) / f_card > 0.15 and hr_ok(60 * f_ref):
+        if verbose:
+            print(f"refining bandpass center from detected triggers ({60*f_ref:.0f} bpm) and re-filtering")
+        f_card = f_ref
+        x_filt, phase, peak_idx = filt(f_card)
+        ihr = np.diff(timestamps[peak_idx])
+    hr = 60 / np.median(ihr) if len(ihr) else np.nan
+    return x_filt, phase, peak_idx, f_card, hr
+
+if PC_OVERRIDE is not None:
+    best_pc = PC_OVERRIDE - 1
+    print(f"using PC{PC_OVERRIDE} (PC_OVERRIDE)")
 else:
-    f_psd, Pxx_best = welch(x, fs=fs, nperseg=min(256, len(x)))
-    band_mask = (f_psd >= CARD_BAND[0]) & (f_psd <= CARD_BAND[1])
-    f_card_psd = f_psd[band_mask][np.argmax(Pxx_best[band_mask])]
-    f_card_ac = fs / ac_lag_arr[best_pc]
-    print(f"self-gated f_card estimates: PSD-peak={f_card_psd:.3f} Hz "
-          f"({60*f_card_psd:.0f} bpm), autocorr-lag={f_card_ac:.3f} Hz "
-          f"({60*f_card_ac:.0f} bpm)")
-    f_card = 0.5 * (f_card_psd + f_card_ac)
-    print(f"using f_card={f_card:.3f} Hz ({60*f_card:.0f} bpm) for bandpass center")
+    tried = []
+    best_pc = None
+    for i in ranked_pcs:
+        *_, hr = gate_with_pc(i)
+        tried.append(f"PC{i+1}: {hr:.0f} bpm")
+        if hr_ok(hr):
+            best_pc = i
+            break
+    if best_pc is None:
+        best_pc = ranked_pcs[0]
+        print(f"WARNING: no PC gave HR within {EXPECTED_HR_BPM} +/- {HR_TOL_BPM} bpm "
+              f"(tried {', '.join(tried)}); falling back to top-scored PC{best_pc+1}")
+    elif len(tried) > 1:
+        print(f"rejected out-of-range PCs before accepting PC{best_pc+1}: {', '.join(tried)}")
 
-bw = 0.5
-min_distance = int(0.5 * fs)
-
-b, a = butter(4, [max(f_card - bw, 0.1), f_card + bw], btype='band', fs=fs)
-x_filt = filtfilt(b, a, x - x.mean())
-best_phase = np.angle(hilbert(x_filt))
-peak_idx, _ = find_peaks(x_filt, distance=min_distance)
+x_filt, best_phase, peak_idx, f_card, hr_est = gate_with_pc(best_pc, verbose=True)
 trig_ts = timestamps[peak_idx]
-
-# Sanity check
 ihr_period = np.diff(trig_ts)
-f_card_refined = 1.0 / np.median(ihr_period)
-print(f"self-gate: n_triggers={len(trig_ts)}, IHR median={60*f_card_refined:.0f} bpm "
-      f"(cv={np.std(ihr_period)/np.median(ihr_period):.2f})")
-
-if not HAVE_PULS and abs(f_card_refined - f_card) / f_card > 0.15:
-    print("refining bandpass center from detected triggers and re-filtering")
-    f_card = f_card_refined
-    b, a = butter(4, [max(f_card - bw, 0.1), f_card + bw], btype='band', fs=fs)
-    x_filt = filtfilt(b, a, x - x.mean())
-    best_phase = np.angle(hilbert(x_filt))
-    peak_idx, _ = find_peaks(x_filt, distance=min_distance)
-    trig_ts = timestamps[peak_idx]
-    ihr_period = np.diff(trig_ts)
-    print(f"after refine: n_triggers={len(trig_ts)}, IHR median="
-          f"{60/np.median(ihr_period):.0f} bpm")
+print(f"self-gate: n_triggers={len(trig_ts)}, IHR median={hr_est:.0f} bpm "
+      f"(cv={np.std(ihr_period)/np.median(ihr_period):.2f})"
+      + ("" if hr_ok(hr_est) else "  <-- OUTSIDE EXPECTED HR WINDOW"))
 
 if HAVE_PULS:
     matched_err = np.array([t - puls_trig_ts[np.argmin(np.abs(puls_trig_ts - t))] for t in trig_ts])
@@ -287,4 +342,3 @@ if SAVE_GIF:
     output_path = f"gifs/{gif_filename}"
     frames[0].save(output_path, save_all=True, append_images=frames[1:], duration=150, loop=0)
     print(f"GIF saved successfully to: {output_path}")
-

@@ -17,4 +17,10 @@
 !/sequences/siemens/example
 !/sequences/ge/example
 
+# Figures and results
+/results/*
+/figures/*
+/gifs/*
+!/gifs/MID0004*
+
 utils/.pge2_state.json
